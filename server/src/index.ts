@@ -9,6 +9,7 @@ import { registerFavoriteRoutes } from './routes/favorites.js';
 import { registerQuizRoutes } from './routes/quiz.js';
 import { registerStationRoutes } from './routes/stations.js';
 import { registerStatsRoutes } from './routes/stats.js';
+import { registerVocabRoutes } from './routes/vocab.js';
 import { ffmpegAvailable, sweepTmpDir } from './services/capture.js';
 import {
   captionsEnabled,
@@ -52,6 +53,7 @@ await registerCaptionRoutes(app);
 await registerQuizRoutes(app);
 await registerStatsRoutes(app);
 await registerFavoriteRoutes(app);
+await registerVocabRoutes(app);
 
 // Serve the built web app when it is present (the Docker image copies it to
 // ../frontend/dist), so one container serves both the API and the UI. In dev

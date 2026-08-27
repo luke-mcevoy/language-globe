@@ -182,3 +182,24 @@ export interface Favorite {
 export interface FavoritesResponse {
   favorites: Favorite[];
 }
+
+/** One word the user looked up from the captions ("words I didn't know"). */
+export interface VocabEntry {
+  id: number;
+  word: string;
+  translation: string;
+  note: string;
+  context: string;
+  stationName: string;
+  timesLookedUp: number;
+  createdAt: string;
+  lastLookedUpAt: string;
+}
+
+export interface VocabResponse {
+  words: VocabEntry[];
+}
+
+export interface VocabLookupResponse {
+  entry: VocabEntry;
+}

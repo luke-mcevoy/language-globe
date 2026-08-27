@@ -2,12 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ApiError,
   captionSessionAudioUrl,
+  lookupWord,
   pollCaptionSession,
   startCaptionSession,
   stopCaptionSession,
 } from '../api';
 import { findActiveChunk, findActiveWordIndex, sessionTimeAt } from '../lib/captionSync';
-import type { CaptionChunk, Station } from '../types';
+import type { CaptionChunk, Station, VocabEntry } from '../types';
 
 interface CaptionsPanelProps {
   station: Station;
@@ -18,6 +19,23 @@ interface CaptionsPanelProps {
   onClose: () => void;
   onAudioUrlChange: (url: string | null) => void;
   getAudioElement: () => HTMLAudioElement | null;
+  onPauseAudio: () => void;
+  onResumeAudio: () => void;
+}
+
+interface WordLookup {
+  word: string;
+  status: 'loading' | 'ready' | 'error';
+  entry?: VocabEntry;
+  message?: string;
+  /** Popover anchor, relative to the panel. */
+  top: number;
+  left: number;
+}
+
+/** Strip surrounding punctuation: clicking "¡Sacude!" looks up "Sacude". */
+function cleanWord(raw: string): string {
+  return raw.replace(/^[\s\p{P}\p{S}]+/u, '').replace(/[\s\p{P}\p{S}]+$/u, '');
 }
 
 interface KaraokeState {
@@ -48,6 +66,8 @@ export function CaptionsPanel({
   getAudioElement,
   onAudioUrlChange,
   onClose,
+  onPauseAudio,
+  onResumeAudio,
   paused,
   station,
 }: CaptionsPanelProps) {
@@ -64,6 +84,8 @@ export function CaptionsPanel({
   const [syncProgress, setSyncProgress] = useState(0);
   const [bufferVersion, setBufferVersion] = useState(0);
   const [pinned, setPinned] = useState(true);
+  const [lookup, setLookup] = useState<WordLookup | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
   const bufferRef = useRef<{ bufferedMs: number; atMs: number } | null>(null);
   /** When the session was created — seeds the sync bar before the first poll reports real buffer fill. */
   const sessionStartRef = useRef<number | null>(null);
@@ -79,9 +101,61 @@ export function CaptionsPanel({
     setSyncReady(false);
     setSyncProgress(0);
     setPinned(true);
+    setLookup(null);
     bufferRef.current = null;
     pinnedRef.current = true;
   }, [station.id]);
+
+  const handleWordClick = useCallback(
+    (raw: string, context: string, target: HTMLElement) => {
+      const word = cleanWord(raw);
+      if (word.length === 0) return;
+      onPauseAudio();
+
+      const panelRect = panelRef.current?.getBoundingClientRect();
+      const wordRect = target.getBoundingClientRect();
+      const panelWidth = panelRect?.width ?? 440;
+      const left = panelRect ? Math.min(Math.max(wordRect.left - panelRect.left + wordRect.width / 2, 130), panelWidth - 130) : 130;
+      const top = panelRect ? Math.max(wordRect.top - panelRect.top, 64) : 64;
+
+      setLookup({ word, status: 'loading', top, left });
+      lookupWord(word, context, station.name)
+        .then((response) =>
+          setLookup((current) =>
+            current?.word === word ? { ...current, status: 'ready', entry: response.entry } : current,
+          ),
+        )
+        .catch((error: unknown) =>
+          setLookup((current) =>
+            current?.word === word
+              ? {
+                  ...current,
+                  status: 'error',
+                  message: error instanceof ApiError ? error.message : 'Translation failed. Try again.',
+                }
+              : current,
+          ),
+        );
+    },
+    [onPauseAudio, station.name],
+  );
+
+  const closeLookup = useCallback(
+    (resume: boolean) => {
+      setLookup(null);
+      if (resume) onResumeAudio();
+    },
+    [onResumeAudio],
+  );
+
+  useEffect(() => {
+    if (!lookup) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeLookup(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [closeLookup, lookup]);
 
   const pinToBottom = useCallback(() => {
     const feed = feedRef.current;
@@ -277,7 +351,7 @@ export function CaptionsPanel({
   }, []);
 
   return (
-    <aside className="captions glass" aria-label="Live captions">
+    <aside className="captions glass" aria-label="Live captions" ref={panelRef}>
       <header className="captions__header">
         <div>
           <p className="captions__eyebrow">Live captions</p>
@@ -331,7 +405,7 @@ export function CaptionsPanel({
             `${isPlaying ? ' captions__chunk--playing' : ''}`;
           return (
             <p className={className} key={chunk.seq}>
-              {renderChunkBody(chunk, isPlaying, isPlaying ? activeWordIndex : -1)}
+              {renderChunkBody(chunk, isPlaying, isPlaying ? activeWordIndex : -1, handleWordClick)}
             </p>
           );
         })}
@@ -350,6 +424,32 @@ export function CaptionsPanel({
         </button>
       )}
 
+      {lookup && (
+        <div className="word-popover" style={{ top: lookup.top, left: lookup.left }} role="dialog" aria-label={`Translation of ${lookup.word}`}>
+          <p className="word-popover__word">{lookup.word}</p>
+          {lookup.status === 'loading' && <p className="word-popover__muted">translating…</p>}
+          {lookup.status === 'error' && <p className="word-popover__error">{lookup.message}</p>}
+          {lookup.status === 'ready' && lookup.entry && (
+            <>
+              <p className="word-popover__translation">{lookup.entry.translation}</p>
+              {lookup.entry.note && <p className="word-popover__note">{lookup.entry.note}</p>}
+              <p className="word-popover__saved">
+                ✓ Saved to your vocab
+                {lookup.entry.timesLookedUp > 1 ? ` · looked up ${lookup.entry.timesLookedUp}×` : ''}
+              </p>
+            </>
+          )}
+          <div className="word-popover__actions">
+            <button type="button" className="word-popover__resume" onClick={() => closeLookup(true)}>
+              ▶ Resume
+            </button>
+            <button type="button" className="word-popover__close" onClick={() => closeLookup(false)}>
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
       <footer className="captions__footer">
         <span>{wordCount} words</span>
         <span className={syncReady ? 'captions__status captions__status--live' : 'captions__status'}>{status}</span>
@@ -358,12 +458,32 @@ export function CaptionsPanel({
   );
 }
 
-function renderChunkBody(chunk: CaptionChunk, isCurrentChunk: boolean, activeWordIndex: number) {
+type WordClickHandler = (word: string, context: string, target: HTMLElement) => void;
+
+function renderChunkBody(
+  chunk: CaptionChunk,
+  isCurrentChunk: boolean,
+  activeWordIndex: number,
+  onWordClick: WordClickHandler,
+) {
   const words = chunk.words;
-  // Plain text when the provider did not report word timings, or when this
-  // chunk is not the one currently playing — already-spoken chunks stay as
-  // normal text so only the karaoke line moves.
-  if (!isCurrentChunk || !words || words.length === 0) return chunk.text;
+  // Chunks without karaoke timing (and already-spoken chunks) render as plain
+  // tokens — still clickable for lookup, just without highlight state.
+  if (!isCurrentChunk || !words || words.length === 0) {
+    return chunk.text.split(/(\s+)/).map((token, index) =>
+      /\S/.test(token) ? (
+        <span
+          key={index}
+          className="captions__word captions__word--clickable"
+          onClick={(event) => onWordClick(token, chunk.text, event.currentTarget)}
+        >
+          {token}
+        </span>
+      ) : (
+        token
+      ),
+    );
+  }
 
   return words.map((word, index) => {
     const state: 'past' | 'current' | 'future' =
@@ -374,7 +494,12 @@ function renderChunkBody(chunk: CaptionChunk, isCurrentChunk: boolean, activeWor
     // text under the pill).
     return (
       <span key={index}>
-        <span className={`captions__word captions__word--${state}`}>{word.word}</span>
+        <span
+          className={`captions__word captions__word--${state} captions__word--clickable`}
+          onClick={(event) => onWordClick(word.word, chunk.text, event.currentTarget)}
+        >
+          {word.word}
+        </span>
         {index < words.length - 1 ? ' ' : ''}
       </span>
     );

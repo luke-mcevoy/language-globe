@@ -1,8 +1,52 @@
 # Language Globe
 
-Language Globe is a language-learning web app for tuning into live radio around the world. It shows a 3D Earth with station pins, plays live streams in the browser, generates comprehension quizzes from the last minute of audio when an OpenAI API key is configured, and tracks quiz progress in a local SQLite database.
+**Spin a 3D Earth, tune into live radio anywhere in the world, and learn a language from what's actually on the air right now.**
 
-The target language is configurable and defaults to Spanish.
+Live streams get synced karaoke captions with word-by-word highlighting, any word you don't know is one click away from a translation that's saved to your vocab list, and a comprehension quiz is generated from the last minute of whatever you were listening to. The target language is configurable and defaults to Spanish.
+
+![Live karaoke captions following a merengue station in Ecuador](docs/media/demo-karaoke.gif)
+
+## What it does
+
+### 1,400+ live stations on a 3D globe
+
+Every pin is a real radio station streaming right now, colored by content type (talk/news, music, unlabelled). Click a pin — or hit **Surprise me** — and you're listening within seconds, with the station's local time and genre in the player. Favorites are saved, dead streams are dimmed.
+
+### Synced karaoke captions
+
+Press **CC** and the app buffers the stream for a few seconds so it can transcribe *ahead* of what you hear. Words light up one-by-one exactly as they're spoken — timing comes from whisper.cpp's DTW-aligned token timestamps, not interpolation. Music passages are detected and collapsed to a ♪ marker.
+
+![Word-level karaoke highlighting on a live stream](docs/media/karaoke.png)
+
+### Click a word you don't know
+
+Clicking any caption word pauses the radio and pops up the English translation with a short grammar note (part of speech, dictionary form). The word is saved to your account automatically — looking it up again just bumps a counter.
+
+![Clicking "Dios" pauses the stream and shows the translation](docs/media/word-lookup.png)
+
+### Comprehension quizzes from live radio
+
+**Quiz me** captures the next 60 seconds of audio, transcribes it, and generates four multiple-choice questions about what was just said — graded server-side against the transcript, which you can review afterwards. These questions were generated from a live classical-music program in Bogotá:
+
+![A generated quiz about a live Colombian radio program](docs/media/quiz.png)
+
+### A listening passport
+
+Accuracy over time, daily streaks, countries you've quizzed in, total words heard — and every word you've looked up, newest first, with the sentence you heard it in.
+
+![Progress panel with stats, passport, and the vocab list](docs/media/progress.png)
+
+## Local models first
+
+Captions and quizzes prefer models running on your machine and fall back to OpenAI only when a key is configured:
+
+| Task | Local (preferred) | Fallback |
+| --- | --- | --- |
+| Transcription + word timing | whisper.cpp (`whisper-server`, DTW alignment) | OpenAI Whisper |
+| Quiz generation | Ollama (`qwen2.5:7b-instruct`) | OpenAI chat model |
+| Word translation | Ollama (`qwen2.5:7b-instruct`) | OpenAI chat model |
+
+With whisper.cpp and Ollama running, the whole experience — captions, karaoke, lookups, quizzes — works with **no API key and no per-use cost**.
 
 ## Setup
 
@@ -14,7 +58,7 @@ npm run dev
 
 The Vite frontend runs on `http://127.0.0.1:5173` and proxies API requests to the Fastify server on `http://127.0.0.1:8787`.
 
-Quizzes are optional. Without `OPENAI_API_KEY`, the globe, station search, player, and stats UI still work, and the app shows a friendly disabled quiz state. To enable quizzes, add this to `server/.env` and restart:
+The globe, station search, player, favorites, and stats work with no configuration. Captions, lookups, and quizzes need at least one model provider — local models via `WHISPER_SERVER_BIN`/`WHISPER_MODEL_PATH` and `OLLAMA_URL`, or:
 
 ```bash
 OPENAI_API_KEY=your_key_here
@@ -32,7 +76,7 @@ PORT=8787
 HOST=127.0.0.1
 ```
 
-`ffmpeg` is recommended for quiz capture from HLS, AAC, Ogg, or unlabeled radio streams. Plain MP3/M4A/WAV/WebM streams can be captured directly.
+`ffmpeg` is recommended for capture from HLS, AAC, Ogg, or unlabeled radio streams. Plain MP3/M4A/WAV/WebM streams can be captured directly.
 
 ## Docker
 
@@ -89,12 +133,13 @@ npm start
 frontend (Vite + React + TS)          server (Node + Fastify + TS)
   3D globe (react-globe.gl)    <-->     GET  /api/stations
   audio player (hls.js)        <-->     GET  /api/health
-  quiz panel                   <-->     POST /api/quiz/start
-  stats / passport view        <-->     POST /api/quiz/submit
-                                      GET  /api/stats
+  captions panel (karaoke)     <-->     POST /api/captions/session   (+ poll, delayed audio relay)
+  word lookup popover          <-->     POST /api/vocab/lookup, GET /api/vocab
+  quiz panel                   <-->     POST /api/quiz/start, POST /api/quiz/submit
+  stats / passport view        <-->     GET  /api/stats
 ```
 
-Stations come from Radio Browser and are cached for six hours in memory and SQLite. The server stores quizzes, transcripts, answer keys, and graded results locally so grading is server-side and progress can be aggregated over time.
+Stations come from Radio Browser and are cached for six hours in memory and SQLite. The server stores quizzes, transcripts, answer keys, graded results, and vocab lookups locally, so grading is server-side and progress can be aggregated over time.
 
 ## Roadmap
 

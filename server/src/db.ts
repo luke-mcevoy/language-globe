@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.js';
 import { createFavoritesStore } from './lib/favorites.js';
+import { createVocabStore } from './lib/vocab.js';
 import type { Difficulty, QuizQuestion } from './types.js';
 import type { QuizResultRow } from './lib/stats.js';
 
@@ -71,6 +72,9 @@ db.prepare('INSERT OR IGNORE INTO users (id, name, created_at) VALUES (?, ?, ?)'
  * the store so the same code can be pointed at an in-memory DB in tests.
  */
 export const favoritesStore = createFavoritesStore(db);
+
+/** "Words I didn't know" — caption word lookups, same store pattern. */
+export const vocabStore = createVocabStore(db);
 
 export interface StoredQuiz {
   id: string;

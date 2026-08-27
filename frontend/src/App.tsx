@@ -237,6 +237,8 @@ export function App() {
           onClose={() => setCaptionsOpen(false)}
           onAudioUrlChange={radio.setAudioUrlOverride}
           getAudioElement={radio.getAudioElement}
+          onPauseAudio={radio.pause}
+          onResumeAudio={radio.resume}
         />
       )}
 

@@ -14,6 +14,9 @@ export interface Radio {
   deadStations: ReadonlySet<string>;
   tune: (station: Station) => void;
   toggle: () => void;
+  /** Pause/resume without toggling — for word-lookup, which must never start playback. */
+  pause: () => void;
+  resume: () => void;
   stop: () => void;
   retry: () => void;
   setVolume: (value: number) => void;
@@ -162,6 +165,17 @@ export function useRadio(): Radio {
     }
   }, [station]);
 
+  const pause = useCallback(() => {
+    audioRef.current?.pause();
+  }, []);
+
+  const resume = useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio || !station || !audio.paused) return;
+    setStatus('loading');
+    void audio.play().catch(() => setStatus('error'));
+  }, [station]);
+
   const stop = useCallback(() => {
     audioRef.current?.pause();
     setAudioUrlOverride(null);
@@ -190,6 +204,8 @@ export function useRadio(): Radio {
     deadStations,
     tune,
     toggle,
+    pause,
+    resume,
     stop,
     retry,
     setVolume,

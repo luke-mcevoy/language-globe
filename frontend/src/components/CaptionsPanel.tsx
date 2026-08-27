@@ -27,6 +27,20 @@ interface KaraokeState {
 
 const IDLE_KARAOKE: KaraokeState = { chunkSeq: null, wordIndex: -1 };
 
+/** Matches MUSIC_CAPTION_TEXT on the server (lib/captions.ts). */
+const MUSIC_TEXT = '♪ music ♪';
+
+/**
+ * Buffer this much past the relay delay before switching audio over, so the
+ * relay can hand the <audio> element several seconds instantly and playback
+ * starts right away instead of trickling in.
+ */
+const SYNC_MARGIN_MS = 8_000;
+
+type FeedItem =
+  | { kind: 'chunk'; chunk: CaptionChunk }
+  | { kind: 'music'; seq: number; count: number };
+
 export function CaptionsPanel({
   active,
   chunkSeconds,
@@ -47,8 +61,12 @@ export function CaptionsPanel({
   // element and the whole station errors out, so we keep playing the direct
   // stream and only switch when the server reports enough buffer.
   const [syncReady, setSyncReady] = useState(false);
+  const [syncProgress, setSyncProgress] = useState(0);
   const [bufferVersion, setBufferVersion] = useState(0);
+  const [pinned, setPinned] = useState(true);
   const bufferRef = useRef<{ bufferedMs: number; atMs: number } | null>(null);
+  /** When the session was created — seeds the sync bar before the first poll reports real buffer fill. */
+  const sessionStartRef = useRef<number | null>(null);
   const feedRef = useRef<HTMLDivElement | null>(null);
   const pinnedRef = useRef(true);
   const delaySeconds = chunkSeconds + 5;
@@ -59,6 +77,8 @@ export function CaptionsPanel({
     setSessionId(null);
     setKaraoke(IDLE_KARAOKE);
     setSyncReady(false);
+    setSyncProgress(0);
+    setPinned(true);
     bufferRef.current = null;
     pinnedRef.current = true;
   }, [station.id]);
@@ -103,6 +123,7 @@ export function CaptionsPanel({
         setSessionId(created.sessionId);
         setSyncReady(false);
         bufferRef.current = null;
+        sessionStartRef.current = performance.now();
         setError(null);
 
         let after = 0;
@@ -143,13 +164,8 @@ export function CaptionsPanel({
     if (syncReady || !sessionId) return;
     const buffer = bufferRef.current;
     if (!buffer) return;
-    // Well past the delay on purpose: at switch time the relay can then hand
-    // the <audio> element ~8s of data instantly, so playback starts in ~1s
-    // instead of trickling at 1x while the browser pre-buffers (~10s of
-    // silence between the live stream stopping and the synced one starting).
-    const marginMs = 8_000;
     const bufferedNow = buffer.bufferedMs + (performance.now() - buffer.atMs);
-    const remainingMs = delaySeconds * 1000 + marginMs - bufferedNow;
+    const remainingMs = delaySeconds * 1000 + SYNC_MARGIN_MS - bufferedNow;
     if (remainingMs <= 0) {
       setSyncReady(true);
       return;
@@ -157,6 +173,26 @@ export function CaptionsPanel({
     const timer = window.setTimeout(() => setSyncReady(true), remainingMs);
     return () => window.clearTimeout(timer);
   }, [bufferVersion, delaySeconds, sessionId, syncReady]);
+
+  // Animate the sync progress bar while buffering (poll data only arrives
+  // every long-poll, so extrapolate between reports).
+  useEffect(() => {
+    if (!sessionId || syncReady) return;
+    const targetMs = delaySeconds * 1000 + SYNC_MARGIN_MS;
+    const timer = window.setInterval(() => {
+      const buffer = bufferRef.current;
+      // Before the first poll reports real buffer fill, estimate from elapsed
+      // time (minus the ~3s burst window the server discards) so the bar
+      // moves right away instead of sitting at 0% for the first chunk.
+      const bufferedNow = buffer
+        ? buffer.bufferedMs + (performance.now() - buffer.atMs)
+        : sessionStartRef.current !== null
+          ? Math.max(0, performance.now() - sessionStartRef.current - 3_000)
+          : 0;
+      setSyncProgress(Math.min(1, bufferedNow / targetMs));
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [delaySeconds, sessionId, syncReady]);
 
   useEffect(() => {
     if (!sessionId || paused || !active || !syncReady) {
@@ -208,13 +244,37 @@ export function CaptionsPanel({
   const activeChunkSeq = karaoke.chunkSeq;
   const activeWordIndex = karaoke.wordIndex;
 
-  const modeFooter = useMemo(() => {
-    if (!syncReady) return `synced - buffering ${delaySeconds}s delay (audio stays live meanwhile)`;
-    const hasKaraoke = chunks.some((chunk) => Array.isArray(chunk.words) && chunk.words.length > 0);
-    return hasKaraoke
-      ? `synced - karaoke - audio delayed ${delaySeconds}s`
-      : `synced - audio delayed ${delaySeconds}s`;
-  }, [chunks, delaySeconds, syncReady]);
+  // Collapse runs of "♪ music ♪" chunks into one quiet row — five identical
+  // lines of music markers were noise that pushed real speech off screen.
+  const feedItems = useMemo(() => {
+    const items: FeedItem[] = [];
+    for (const chunk of chunks) {
+      const last = items[items.length - 1];
+      if (chunk.text === MUSIC_TEXT) {
+        if (last?.kind === 'music') {
+          last.count += 1;
+          last.seq = chunk.seq;
+        } else {
+          items.push({ kind: 'music', seq: chunk.seq, count: 1 });
+        }
+      } else {
+        items.push({ kind: 'chunk', chunk });
+      }
+    }
+    return items;
+  }, [chunks]);
+
+  const status = !syncReady
+    ? 'syncing audio to captions'
+    : `karaoke · audio ${delaySeconds}s behind live`;
+
+  const jumpToLatest = useCallback(() => {
+    const feed = feedRef.current;
+    if (!feed) return;
+    pinnedRef.current = true;
+    setPinned(true);
+    feed.scrollTop = feed.scrollHeight;
+  }, []);
 
   return (
     <aside className="captions glass" aria-label="Live captions">
@@ -232,24 +292,43 @@ export function CaptionsPanel({
         </div>
       </header>
 
+      {!syncReady && !error && (
+        <div className="captions__sync" role="status">
+          <span>Syncing audio</span>
+          <div className="captions__sync-track" aria-hidden="true">
+            <div className="captions__sync-fill" style={{ width: `${Math.round(syncProgress * 100)}%` }} />
+          </div>
+          <span className="captions__sync-pct">{Math.round(syncProgress * 100)}%</span>
+        </div>
+      )}
+
       <div
         className="captions__feed"
         ref={feedRef}
         onScroll={(event) => {
           const feed = event.currentTarget;
-          pinnedRef.current = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 24;
+          const atBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 24;
+          pinnedRef.current = atBottom;
+          setPinned(atBottom);
         }}
       >
         {chunks.length === 0 && !pending && !paused && !error && (
-          <p className="captions__empty">Waiting for the next spoken chunk...</p>
+          <p className="captions__empty">Listening for speech…</p>
         )}
-        {chunks.map((chunk, index) => {
-          const isLatest = index === chunks.length - 1;
+        {feedItems.map((item, index) => {
+          const isLatest = index === feedItems.length - 1;
+          if (item.kind === 'music') {
+            return (
+              <p className="captions__music" key={`music-${item.seq}`}>
+                {MUSIC_TEXT}
+              </p>
+            );
+          }
+          const { chunk } = item;
           const isPlaying = chunk.seq === activeChunkSeq;
           const className =
             `captions__chunk${isLatest ? ' captions__chunk--latest' : ''}` +
-            `${isPlaying ? ' captions__chunk--playing' : ''}` +
-            `${chunk.text.includes('music') ? ' captions__chunk--music' : ''}`;
+            `${isPlaying ? ' captions__chunk--playing' : ''}`;
           return (
             <p className={className} key={chunk.seq}>
               {renderChunkBody(chunk, isPlaying, isPlaying ? activeWordIndex : -1)}
@@ -265,9 +344,15 @@ export function CaptionsPanel({
         )}
       </div>
 
+      {!pinned && (
+        <button type="button" className="captions__jump" onClick={jumpToLatest}>
+          ↓ Latest
+        </button>
+      )}
+
       <footer className="captions__footer">
         <span>{wordCount} words</span>
-        <span>{modeFooter}</span>
+        <span className={syncReady ? 'captions__status captions__status--live' : 'captions__status'}>{status}</span>
       </footer>
     </aside>
   );
@@ -283,9 +368,13 @@ function renderChunkBody(chunk: CaptionChunk, isCurrentChunk: boolean, activeWor
   return words.map((word, index) => {
     const state: 'past' | 'current' | 'future' =
       index < activeWordIndex ? 'past' : index === activeWordIndex ? 'current' : 'future';
+    // The separating space lives OUTSIDE the highlighted span: the current
+    // word's pill background would otherwise swallow the space plus the
+    // first letter of the next word (its negative margin pulls the following
+    // text under the pill).
     return (
-      <span key={index} className={`captions__word captions__word--${state}`}>
-        {word.word}
+      <span key={index}>
+        <span className={`captions__word captions__word--${state}`}>{word.word}</span>
         {index < words.length - 1 ? ' ' : ''}
       </span>
     );

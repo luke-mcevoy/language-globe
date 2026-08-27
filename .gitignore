@@ -13,3 +13,4 @@ tmp/
 
 # local whisper models (large binaries)
 server/models/
+frontend/tsconfig.tsbuildinfo

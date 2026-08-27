@@ -405,7 +405,10 @@ export class CaptionSessionStore {
   private createChain: Promise<unknown> = Promise.resolve();
 
   constructor(options: CaptionSessionStoreOptions = {}) {
-    this.maxSessions = options.maxSessions ?? 2;
+    // Each session costs one stream connection plus ~1.5s of whisper CPU per
+    // 15s chunk, so four concurrent sessions is comfortable — and it keeps a
+    // second tab or a dev test run from starving the user's live session.
+    this.maxSessions = options.maxSessions ?? 4;
     this.expireMs = options.expireMs ?? 10 * 60_000;
     this.longPollMs = options.longPollMs ?? 25_000;
     this.now = options.now ?? Date.now;

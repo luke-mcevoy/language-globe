@@ -4,12 +4,10 @@ import { GLView, type ExpoWebGLRenderingContext } from 'expo-gl';
 import { Renderer, TextureLoader } from 'expo-three';
 import ThreeGlobe from 'three-globe';
 import * as THREE from 'three';
-import { subsolarPoint } from '../lib/solar';
 import type { Station } from '../types';
 
 const TEXTURES = {
   day: 'https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg',
-  night: 'https://unpkg.com/three-globe/example/img/earth-night.jpg',
   topology: 'https://unpkg.com/three-globe/example/img/earth-topology.png',
 } as const;
 
@@ -23,55 +21,6 @@ export const KIND_COLORS = {
 export const FAVORITE_COLOR = '#ffcf6a';
 const DEAD_COLOR = '#3a4256';
 const GLOBE_RADIUS = 100;
-
-const dayNightShader = {
-  vertexShader: `
-    varying vec3 vNormal;
-    varying vec2 vUv;
-    void main() {
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      vNormal = normalize(normalMatrix * normal);
-      vUv = uv;
-    }
-  `,
-  fragmentShader: `
-    #define PI 3.141592653589793
-
-    uniform sampler2D dayTexture;
-    uniform sampler2D nightTexture;
-    uniform vec2 sunPosition;
-    uniform vec2 globeRotation;
-    varying vec3 vNormal;
-    varying vec2 vUv;
-
-    float toRad(in float a) { return a * PI / 180.0; }
-
-    vec3 polarToCartesian(in vec2 lngLat) {
-      float theta = toRad(90.0 - lngLat.x);
-      float phi = toRad(90.0 - lngLat.y);
-      return vec3(sin(phi) * cos(theta), cos(phi), sin(phi) * sin(theta));
-    }
-
-    void main() {
-      float invLon = toRad(globeRotation.x);
-      float invLat = -toRad(globeRotation.y);
-      mat3 rotX = mat3(1, 0, 0, 0, cos(invLat), -sin(invLat), 0, sin(invLat), cos(invLat));
-      mat3 rotY = mat3(cos(invLon), 0, sin(invLon), 0, 1, 0, -sin(invLon), 0, cos(invLon));
-      vec3 sunDirection = rotX * rotY * polarToCartesian(sunPosition);
-
-      float intensity = dot(normalize(vNormal), normalize(sunDirection));
-      vec4 dayColor = texture2D(dayTexture, vUv);
-      vec4 nightColor = texture2D(nightTexture, vUv);
-      float blend = smoothstep(-0.18, 0.22, intensity);
-      vec4 surface = mix(nightColor, dayColor, blend);
-      vec3 dusk = vec3(1.06, 0.86, 0.72);
-      float duskAmount = 1.0 - abs(smoothstep(-0.18, 0.22, intensity) * 2.0 - 1.0);
-      surface.rgb = mix(surface.rgb, surface.rgb * dusk, duskAmount * 0.45);
-
-      gl_FragColor = surface;
-    }
-  `,
-};
 
 interface GlobeViewProps {
   stations: Station[];
@@ -225,7 +174,7 @@ export function GlobeView({
         .atmosphereColor('#6fb7ff')
         .atmosphereAltitude(0.19);
 
-      const material = await buildDayNightMaterial();
+      const material = await buildDayMaterial();
       if (material) globe.globeMaterial(material as never);
 
       scene.add(starField());
@@ -245,8 +194,6 @@ export function GlobeView({
         globe.rotation.y = rotationRef.current.y;
         camera.position.set(0, 0, distanceRef.current);
         camera.lookAt(0, 0, 0);
-        material?.uniforms.sunPosition.value.set(subsolarPoint().lng, subsolarPoint().lat);
-        material?.uniforms.globeRotation.value.set(THREE.MathUtils.radToDeg(rotationRef.current.y), THREE.MathUtils.radToDeg(rotationRef.current.x));
         renderer.render(scene, camera);
         gl.endFrameEXP();
       };
@@ -291,25 +238,18 @@ function ringsFor(selected: Station | null, playing: Station | null): Ring[] {
   return data;
 }
 
-async function buildDayNightMaterial(): Promise<THREE.ShaderMaterial | null> {
+/**
+ * Always-daylight globe: an unlit material with the day texture, so no part
+ * of the Earth is ever in shadow regardless of the real time of day.
+ */
+async function buildDayMaterial(): Promise<THREE.MeshBasicMaterial | null> {
   const loader = new TextureLoader();
   const load = (url: string) =>
     new Promise<THREE.Texture>((resolve, reject) => loader.load(url, resolve, undefined, reject));
   try {
-    const [day, night] = await Promise.all([load(TEXTURES.day), load(TEXTURES.night)]);
+    const day = await load(TEXTURES.day);
     day.colorSpace = THREE.SRGBColorSpace;
-    night.colorSpace = THREE.SRGBColorSpace;
-    const sun = subsolarPoint();
-    return new THREE.ShaderMaterial({
-      uniforms: {
-        dayTexture: { value: day },
-        nightTexture: { value: night },
-        sunPosition: { value: new THREE.Vector2(sun.lng, sun.lat) },
-        globeRotation: { value: new THREE.Vector2() },
-      },
-      vertexShader: dayNightShader.vertexShader,
-      fragmentShader: dayNightShader.fragmentShader,
-    });
+    return new THREE.MeshBasicMaterial({ map: day });
   } catch {
     return null;
   }

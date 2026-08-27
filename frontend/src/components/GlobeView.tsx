@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Globe, { type GlobeMethods } from 'react-globe.gl';
 import * as THREE from 'three';
-import { subsolarPoint } from '../lib/solar';
 import { flagEmoji, localTimeAt } from '../lib/format';
 import type { Station } from '../types';
 
 const TEXTURES = {
   day: 'https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg',
-  night: 'https://unpkg.com/three-globe/example/img/earth-night.jpg',
   topology: 'https://unpkg.com/three-globe/example/img/earth-topology.png',
   stars: 'https://unpkg.com/three-globe/example/img/night-sky.png',
 } as const;
@@ -21,65 +19,6 @@ export const KIND_COLORS = {
 /** Warm gold overrides the kind color so favorites read as a distinct pin. */
 export const FAVORITE_COLOR = '#ffcf6a';
 const DEAD_COLOR = '#3a4256';
-
-/**
- * Blends the daytime and night-lights textures across the real terminator.
- * `sunPosition` is the subsolar point in degrees; `globeRotation` is the
- * current camera point-of-view, which the shader needs because globe.gl
- * rotates the globe object rather than the camera.
- */
-const dayNightShader = {
-  vertexShader: /* glsl */ `
-    varying vec3 vNormal;
-    varying vec2 vUv;
-    void main() {
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      vNormal = normalize(normalMatrix * normal);
-      vUv = uv;
-    }
-  `,
-  fragmentShader: /* glsl */ `
-    #define PI 3.141592653589793
-
-    uniform sampler2D dayTexture;
-    uniform sampler2D nightTexture;
-    uniform vec2 sunPosition;
-    uniform vec2 globeRotation;
-    varying vec3 vNormal;
-    varying vec2 vUv;
-
-    float toRad(in float a) { return a * PI / 180.0; }
-
-    vec3 polarToCartesian(in vec2 lngLat) {
-      float theta = toRad(90.0 - lngLat.x);
-      float phi = toRad(90.0 - lngLat.y);
-      return vec3(sin(phi) * cos(theta), cos(phi), sin(phi) * sin(theta));
-    }
-
-    void main() {
-      float invLon = toRad(globeRotation.x);
-      float invLat = -toRad(globeRotation.y);
-      mat3 rotX = mat3(1, 0, 0, 0, cos(invLat), -sin(invLat), 0, sin(invLat), cos(invLat));
-      mat3 rotY = mat3(cos(invLon), 0, sin(invLon), 0, 1, 0, -sin(invLon), 0, cos(invLon));
-      vec3 sunDirection = rotX * rotY * polarToCartesian(sunPosition);
-
-      float intensity = dot(normalize(vNormal), normalize(sunDirection));
-      vec4 dayColor = texture2D(dayTexture, vUv);
-      vec4 nightColor = texture2D(nightTexture, vUv);
-
-      // Wide-ish blend so dusk reads as a soft band rather than a hard edge.
-      float blend = smoothstep(-0.18, 0.22, intensity);
-      vec4 surface = mix(nightColor, dayColor, blend);
-
-      // Cool the night side slightly and warm the terminator.
-      vec3 dusk = vec3(1.06, 0.86, 0.72);
-      float duskAmount = 1.0 - abs(smoothstep(-0.18, 0.22, intensity) * 2.0 - 1.0);
-      surface.rgb = mix(surface.rgb, surface.rgb * dusk, duskAmount * 0.45);
-
-      gl_FragColor = surface;
-    }
-  `,
-};
 
 interface GlobeViewProps {
   stations: Station[];
@@ -128,64 +67,39 @@ export function GlobeView({
 }: GlobeViewProps) {
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const [containerRef, size] = useElementSize();
-  const [material, setMaterial] = useState<THREE.ShaderMaterial | null>(null);
+  const [material, setMaterial] = useState<THREE.MeshBasicMaterial | null>(null);
   const [hovered, setHovered] = useState<Station | null>(null);
 
-  // Build the shader material once, then keep its sun uniform on real time.
+  // Always-daylight globe: an unlit material with the day texture, so no part
+  // of the Earth is ever in shadow regardless of the real time of day.
   useEffect(() => {
     const loader = new THREE.TextureLoader();
     loader.setCrossOrigin('anonymous');
     let disposed = false;
 
-    const load = (url: string): Promise<THREE.Texture> =>
-      new Promise((resolve, reject) => loader.load(url, resolve, undefined, reject));
-
-    void Promise.all([load(TEXTURES.day), load(TEXTURES.night)])
-      .then(([day, night]) => {
+    loader.load(
+      TEXTURES.day,
+      (day) => {
         if (disposed) {
           day.dispose();
-          night.dispose();
           return;
         }
         day.colorSpace = THREE.SRGBColorSpace;
-        night.colorSpace = THREE.SRGBColorSpace;
-
-        const sun = subsolarPoint();
-        setMaterial(
-          new THREE.ShaderMaterial({
-            uniforms: {
-              dayTexture: { value: day },
-              nightTexture: { value: night },
-              sunPosition: { value: new THREE.Vector2(sun.lng, sun.lat) },
-              globeRotation: { value: new THREE.Vector2() },
-            },
-            vertexShader: dayNightShader.vertexShader,
-            fragmentShader: dayNightShader.fragmentShader,
-          }),
-        );
+        setMaterial(new THREE.MeshBasicMaterial({ map: day }));
         onReady?.();
-      })
-      .catch(() => {
-        // Without the textures globe.gl still renders its default sphere, so
+      },
+      undefined,
+      () => {
+        // Without the texture globe.gl still renders its default sphere, so
         // the app degrades to a plain globe instead of a blank screen.
         onReady?.();
-      });
+      },
+    );
 
     return () => {
       disposed = true;
     };
   }, [onReady]);
-
-  useEffect(() => {
-    if (!material) return;
-    const tick = () => {
-      const sun = subsolarPoint();
-      (material.uniforms.sunPosition?.value as THREE.Vector2 | undefined)?.set(sun.lng, sun.lat);
-    };
-    tick();
-    const timer = window.setInterval(tick, 30_000);
-    return () => window.clearInterval(timer);
-  }, [material]);
 
   // Idle auto-rotation, paused while a station is selected.
   useEffect(() => {
@@ -204,13 +118,6 @@ export function GlobeView({
     if (!selected) return;
     globeRef.current?.pointOfView({ lat: selected.lat, lng: selected.lon, altitude: 1.35 }, 1400);
   }, [selected]);
-
-  const handleZoom = useCallback(
-    (pov: { lat: number; lng: number; altitude: number }) => {
-      (material?.uniforms.globeRotation?.value as THREE.Vector2 | undefined)?.set(pov.lng, pov.lat);
-    },
-    [material],
-  );
 
   const maxClicks = useMemo(
     () => stations.reduce((max, station) => Math.max(max, station.clickcount), 1),
@@ -305,7 +212,6 @@ export function GlobeView({
           pointLabel={pointLabel}
           onPointHover={(object: object | null) => setHovered((object as Station | null) ?? null)}
           onPointClick={(object: object) => onSelect(object as Station)}
-          onZoom={handleZoom}
           ringsData={rings}
           ringLat={(object: object) => (object as { lat: number }).lat}
           ringLng={(object: object) => (object as { lng: number }).lng}

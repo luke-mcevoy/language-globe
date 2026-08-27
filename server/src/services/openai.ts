@@ -77,6 +77,75 @@ export async function transcribeVerbose(
   return { text: cleanTranscript(text), words: words ?? undefined };
 }
 
+export const TRANSLATION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['translation', 'note'],
+  properties: {
+    translation: { type: 'string' },
+    note: { type: 'string' },
+  },
+} as const;
+
+export interface WordTranslation {
+  translation: string;
+  note: string;
+}
+
+export function buildTranslationPrompt(word: string, context: string, language: string): string {
+  const languageName = language.charAt(0).toUpperCase() + language.slice(1);
+  return [
+    `You are a ${languageName}-to-English dictionary for a language learner listening to live radio.`,
+    `Translate the ${languageName} word below as it is used in its context.`,
+    '',
+    'Rules:',
+    '- "translation": the English meaning of the WORD ITSELF, in 1-4 words. Never translate the surrounding phrase.',
+    '- Use the context only to choose between senses of the word (e.g. "banco" = bench vs bank). If the context is noisy or unhelpful, give the word\'s most common meaning.',
+    '- If the word is (part of) a proper name, still translate the word itself if it has an ordinary meaning (e.g. "Dios" → "God") and mention the name in the note.',
+    '- "note": one short sentence of grammar help — part of speech, and the dictionary form (lemma/infinitive) if the word is inflected. Mention an idiom only if the context uses one.',
+    '- The transcript is automatic and may be garbled; if the word looks garbled, translate the most plausible intended word and say so in the note.',
+    '',
+    `WORD: ${word}`,
+    context ? `CONTEXT: """${context}"""` : 'CONTEXT: (none available)',
+  ].join('\n');
+}
+
+export function parseWordTranslation(payload: unknown): WordTranslation | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const record = payload as { translation?: unknown; note?: unknown };
+  if (typeof record.translation !== 'string' || record.translation.trim().length === 0) return null;
+  return {
+    translation: record.translation.trim(),
+    note: typeof record.note === 'string' ? record.note.trim() : '',
+  };
+}
+
+export async function translateWord(word: string, context: string, language = config.targetLanguage): Promise<WordTranslation> {
+  const completion = await getClient().chat.completions.create({
+    model: config.quizModel,
+    temperature: 0.2,
+    messages: [
+      { role: 'system', content: 'You are a precise bilingual dictionary and reply only with JSON matching the schema.' },
+      { role: 'user', content: buildTranslationPrompt(word, context, language) },
+    ],
+    response_format: {
+      type: 'json_schema',
+      json_schema: { name: 'word_translation', strict: true, schema: TRANSLATION_SCHEMA },
+    },
+  });
+
+  const content = completion.choices[0]?.message?.content ?? '';
+  let payload: unknown;
+  try {
+    payload = JSON.parse(content);
+  } catch {
+    throw new Error('The translation model did not return valid JSON');
+  }
+  const translation = parseWordTranslation(payload);
+  if (!translation) throw new Error('The translation model returned no usable translation');
+  return translation;
+}
+
 export const QUESTION_SCHEMA = {
   type: 'object',
   additionalProperties: false,

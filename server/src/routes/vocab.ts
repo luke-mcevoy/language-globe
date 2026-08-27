@@ -1,0 +1,78 @@
+import type { FastifyInstance } from 'fastify';
+import { CURRENT_USER_ID, vocabStore } from '../db.js';
+import { normalizeWord, type VocabRecord } from '../lib/vocab.js';
+import { quizEnabled, translateWord } from '../services/providers.js';
+import type { VocabEntry, VocabLookupResponse, VocabResponse } from '../types.js';
+
+function toEntry(record: VocabRecord): VocabEntry {
+  return {
+    id: record.id,
+    word: record.word,
+    translation: record.translation,
+    note: record.note,
+    context: record.context,
+    stationName: record.station_name,
+    timesLookedUp: record.times_looked_up,
+    createdAt: record.created_at,
+    lastLookedUpAt: record.last_looked_up_at,
+  };
+}
+
+interface LookupBody {
+  word?: unknown;
+  context?: unknown;
+  stationName?: unknown;
+}
+
+export async function registerVocabRoutes(app: FastifyInstance): Promise<void> {
+  app.get('/api/vocab', async (): Promise<VocabResponse> => ({
+    words: vocabStore.list(CURRENT_USER_ID).map(toEntry),
+  }));
+
+  app.post<{ Body: LookupBody }>('/api/vocab/lookup', async (request, reply) => {
+    const word = typeof request.body?.word === 'string' ? request.body.word.trim() : '';
+    const context = typeof request.body?.context === 'string' ? request.body.context.slice(0, 600) : '';
+    const stationName = typeof request.body?.stationName === 'string' ? request.body.stationName.slice(0, 120) : '';
+
+    if (normalizeWord(word).length === 0 || word.length > 60) {
+      return reply.status(400).send({ error: 'bad_request', message: 'A single word is required.' });
+    }
+    if (!quizEnabled()) {
+      return reply.status(503).send({
+        error: 'translation_unavailable',
+        message: 'No translation model is available. Configure OPENAI_API_KEY or Ollama.',
+      });
+    }
+
+    let translation;
+    try {
+      translation = await translateWord(word, context);
+    } catch (error) {
+      request.log.warn({ err: error, word }, 'word translation failed');
+      return reply.status(502).send({
+        error: 'translation_failed',
+        message: 'The translation model did not respond. Try again.',
+      });
+    }
+
+    const record = vocabStore.record({
+      userId: CURRENT_USER_ID,
+      word,
+      translation: translation.translation,
+      note: translation.note,
+      context,
+      stationName,
+    });
+    const response: VocabLookupResponse = { entry: toEntry(record) };
+    return response;
+  });
+
+  app.delete<{ Params: { id: string } }>('/api/vocab/:id', async (request, reply) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id)) {
+      return reply.status(400).send({ error: 'bad_request', message: 'A numeric id is required.' });
+    }
+    vocabStore.remove(CURRENT_USER_ID, id);
+    return reply.status(204).send();
+  });
+}

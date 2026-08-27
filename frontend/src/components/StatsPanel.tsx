@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   CartesianGrid,
   Line,
@@ -9,8 +9,9 @@ import {
   YAxis,
   type TooltipContentProps,
 } from 'recharts';
+import { getVocab, removeVocabWord } from '../api';
 import { flagEmoji, formatCompact, formatPercent, shortDate } from '../lib/format';
-import type { StatsResponse } from '../types';
+import type { StatsResponse, VocabEntry } from '../types';
 
 interface StatsPanelProps {
   stats: StatsResponse | null;
@@ -58,6 +59,67 @@ export function StatsPanel({ stats, loading, error, onClose }: StatsPanelProps) 
   );
 }
 
+/**
+ * "Words I didn't know" — every caption word the user clicked for a
+ * translation, newest lookups first. Self-contained fetch so the section
+ * works regardless of quiz history.
+ */
+function VocabSection() {
+  const [words, setWords] = useState<VocabEntry[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getVocab()
+      .then((response) => {
+        if (!cancelled) setWords(response.words);
+      })
+      .catch(() => {
+        if (!cancelled) setWords([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const remove = (id: number) => {
+    setWords((current) => current?.filter((entry) => entry.id !== id) ?? null);
+    void removeVocabWord(id).catch(() => undefined);
+  };
+
+  if (!words || words.length === 0) return null;
+
+  return (
+    <section className="stats__section vocab">
+      <div className="stats__section-head">
+        <h3>Words you looked up</h3>
+        <span className="stats__section-note">
+          {words.length} {words.length === 1 ? 'word' : 'words'} · click a caption word to add more
+        </span>
+      </div>
+      <ul className="vocab__list">
+        {words.map((entry) => (
+          <li className="vocab__row" key={entry.id} title={entry.context ? `“${entry.context}”` : undefined}>
+            <span className="vocab__word">{entry.word}</span>
+            <span className="vocab__translation">
+              {entry.translation}
+              {entry.note ? <span className="vocab__note"> — {entry.note}</span> : null}
+            </span>
+            {entry.timesLookedUp > 1 && <span className="vocab__count">{entry.timesLookedUp}×</span>}
+            <button
+              type="button"
+              className="vocab__remove"
+              onClick={() => remove(entry.id)}
+              aria-label={`Remove ${entry.word} from your vocab list`}
+            >
+              ✕
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function StatsBody({ stats }: { stats: StatsResponse }) {
   const chartData = useMemo(
     () =>
@@ -77,15 +139,18 @@ function StatsBody({ stats }: { stats: StatsResponse }) {
 
   if (!hasHistory) {
     return (
-      <div className="modal__center modal__empty">
-        <div className="quiz__key-icon" aria-hidden="true">
-          🧭
+      <div className="stats">
+        <div className="modal__center modal__empty">
+          <div className="quiz__key-icon" aria-hidden="true">
+            🧭
+          </div>
+          <p className="quiz__error-title">No quizzes yet</p>
+          <p className="quiz__error-message">
+            Tune into a talk station, hit <strong>Quiz me</strong>, and your accuracy, streak and country
+            passport will start filling in here.
+          </p>
         </div>
-        <p className="quiz__error-title">No quizzes yet</p>
-        <p className="quiz__error-message">
-          Tune into a talk station, hit <strong>Quiz me</strong>, and your accuracy, streak and country
-          passport will start filling in here.
-        </p>
+        <VocabSection />
       </div>
     );
   }
@@ -202,6 +267,8 @@ function StatsBody({ stats }: { stats: StatsResponse }) {
           </tbody>
         </table>
       </section>
+
+      <VocabSection />
     </div>
   );
 }

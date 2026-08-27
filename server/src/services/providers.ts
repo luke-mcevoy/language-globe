@@ -15,10 +15,15 @@ import {
 import type { Difficulty, QuizQuestion } from '../types.js';
 import {
   buildQuizPrompt,
+  buildTranslationPrompt,
   generateQuestions as generateOpenAiQuestions,
+  parseWordTranslation,
   QUESTION_SCHEMA,
+  TRANSLATION_SCHEMA,
   transcribeVerbose as transcribeVerboseOpenAi,
+  translateWord as translateWordOpenAi,
   type TranscribeResult,
+  type WordTranslation,
 } from './openai.js';
 
 export type { TranscribeResult } from './openai.js';
@@ -432,6 +437,50 @@ export async function generateQuizQuestions(transcript: string, difficulty: Diff
   }
   if (providerState.openaiAvailable) return generateOpenAiQuestions(transcript, difficulty);
   throw new Error('No quiz generation provider is available.');
+}
+
+async function translateWordOllama(word: string, context: string): Promise<WordTranslation> {
+  const response = await fetch(new URL('/api/chat', config.ollamaUrl), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: config.ollamaModel,
+      stream: false,
+      format: TRANSLATION_SCHEMA,
+      options: { temperature: 0.2 },
+      messages: [
+        { role: 'system', content: 'You are a precise bilingual dictionary and reply only with JSON matching the schema.' },
+        { role: 'user', content: buildTranslationPrompt(word, context, config.targetLanguage) },
+      ],
+    }),
+  });
+  if (!response.ok) throw new Error(`Ollama responded ${response.status}`);
+
+  const payload = (await response.json()) as { message?: { content?: unknown } };
+  const content = typeof payload.message?.content === 'string' ? payload.message.content : '';
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error('Ollama did not return valid JSON');
+  }
+  const translation = parseWordTranslation(parsed);
+  if (!translation) throw new Error('Ollama returned no usable translation');
+  return translation;
+}
+
+/** Word lookups ride the quiz provider: same models, same fallback order. */
+export async function translateWord(word: string, context: string): Promise<WordTranslation> {
+  const primary = providerState.quizProvider;
+  if (primary === 'ollama') {
+    try {
+      return await translateWordOllama(word, context);
+    } catch (error) {
+      if (!providerState.openaiAvailable) throw error;
+    }
+  }
+  if (providerState.openaiAvailable) return translateWordOpenAi(word, context);
+  throw new Error('No translation provider is available.');
 }
 
 export function shutdownProviders(): void {

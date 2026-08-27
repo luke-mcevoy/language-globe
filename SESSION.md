@@ -1,0 +1,5 @@
+# Session journal
+
+- 2026-08-26 19:22 — dispatched to claude: Build the entire Language Globe project in the current directory (an already-initialized git repo). 
+- 2026-08-26 19:52 — dispatched to codex: This project (Language Globe) was mostly built by a previous AI session that was cut off by a usage 
+- 2026-08-26 19:56 — Fixed frontend typecheck failures by wiring GlobeView's zoom handler into react-globe.gl, using Recharts' TooltipContentProps correctly, and splitting Vite/Vitest config so their Vite type versions do not collide. Added README.md, expanded .gitignore for SQLite sidecar files, verified typecheck/build/tests from root. Feature audit found the PLAN.md core pieces implemented: day/night shader, station pins/rings, surprise-me, hls.js player, quiz capture/transcribe/generation/music threshold, quizEnabled health flag, SQLite stats, passport UI, and loading/error states. No unresolved blockers; live OpenAI quiz behavior still depends on a real API key and reachable radio streams.

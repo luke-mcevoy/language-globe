@@ -1,0 +1,26 @@
+{
+  "name": "language-globe",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Live world radio on a 3D globe, with AI comprehension quizzes for language learners.",
+  "type": "module",
+  "workspaces": [
+    "server",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c magenta,cyan \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "npm run dev --workspace server",
+    "dev:web": "npm run dev --workspace frontend",
+    "build": "npm run build --workspace server && npm run build --workspace frontend",
+    "typecheck": "npm run typecheck --workspace server && npm run typecheck --workspace frontend",
+    "test": "npm run test --workspace server && npm run test --workspace frontend",
+    "start": "npm run start --workspace server"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

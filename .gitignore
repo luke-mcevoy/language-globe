@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+tmp/
+.DS_Store
+.claude/settings.local.json

@@ -41,6 +41,34 @@ describe('CaptionSession', () => {
     expect(session.resultsAfter(1).map((result) => result.text)).toEqual(['dos', 'tres']);
     expect(session.resultsAfter(3)).toEqual([]);
   });
+
+  it('serves every relay connection from the start of the buffer', async () => {
+    // Browsers open more than one connection to a media URL (preload probe,
+    // dev-mode double mount). If reading were destructive, the connection that
+    // actually plays would start mid-stream and audio.currentTime would no
+    // longer map to session offset 0 — desyncing the karaoke highlight.
+    const session = new CaptionSession(station, { now: () => 1000 });
+    const push = (text: string) =>
+      (session as unknown as { pushAudio(data: Uint8Array): void }).pushAudio(new TextEncoder().encode(text));
+    push('one');
+    push('two');
+
+    const read = async (count: number) => {
+      const relay = session.audioRelay(0);
+      const out: string[] = [];
+      for (let i = 0; i < count; i += 1) {
+        const next = await relay.next();
+        if (next.done) break;
+        out.push(new TextDecoder().decode(next.value));
+      }
+      await relay.return(undefined as never);
+      return out;
+    };
+
+    expect(await read(2)).toEqual(['one', 'two']);
+    expect(await read(2)).toEqual(['one', 'two']);
+    session.stop();
+  });
 });
 
 describe('CaptionSessionStore', () => {

@@ -30,6 +30,13 @@ export const config = {
   whisperServerUrl: process.env.WHISPER_SERVER_URL ?? 'http://127.0.0.1:8788',
   whisperServerHost: process.env.WHISPER_SERVER_HOST ?? '127.0.0.1',
   whisperServerPort: num(process.env.WHISPER_SERVER_PORT, 8788),
+  /**
+   * whisper.cpp DTW alignment preset (must match the model). Without it the
+   * per-word times are linear interpolation across each segment — useless for
+   * karaoke. Set WHISPER_DTW_PRESET="" to disable. Note: DTW forces
+   * flash-attention off, costing ~2x inference time (still ~1.5s per 15s clip).
+   */
+  whisperDtwPreset: process.env.WHISPER_DTW_PRESET ?? 'large.v3.turbo',
   ollamaUrl: process.env.OLLAMA_URL ?? 'http://127.0.0.1:11434',
   ollamaModel: process.env.OLLAMA_MODEL ?? 'qwen2.5:7b-instruct',
   dbPath: path.isAbsolute(dbPath) ? dbPath : path.join(serverRoot, dbPath),

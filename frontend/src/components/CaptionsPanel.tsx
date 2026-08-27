@@ -6,14 +6,7 @@ import {
   startCaptionSession,
   stopCaptionSession,
 } from '../api';
-import {
-  findActiveChunk,
-  findActiveWordIndex,
-  initialPlaybackAnchor,
-  reanchorPlayback,
-  sessionTimeAt,
-  type PlaybackAnchor,
-} from '../lib/captionSync';
+import { findActiveChunk, findActiveWordIndex, sessionTimeAt } from '../lib/captionSync';
 import type { CaptionChunk, Station } from '../types';
 
 interface CaptionsPanelProps {
@@ -58,8 +51,6 @@ export function CaptionsPanel({
   const bufferRef = useRef<{ bufferedMs: number; atMs: number } | null>(null);
   const feedRef = useRef<HTMLDivElement | null>(null);
   const pinnedRef = useRef(true);
-  const anchorRef = useRef<PlaybackAnchor>(initialPlaybackAnchor());
-  const sessionEpochRef = useRef<number | null>(null);
   const delaySeconds = chunkSeconds + 5;
 
   useEffect(() => {
@@ -69,8 +60,6 @@ export function CaptionsPanel({
     setKaraoke(IDLE_KARAOKE);
     setSyncReady(false);
     bufferRef.current = null;
-    anchorRef.current = initialPlaybackAnchor();
-    sessionEpochRef.current = null;
     pinnedRef.current = true;
   }, [station.id]);
 
@@ -89,7 +78,6 @@ export function CaptionsPanel({
       setPending(false);
       setSessionId(null);
       setKaraoke(IDLE_KARAOKE);
-      sessionEpochRef.current = null;
       onAudioUrlChange(null);
       return;
     }
@@ -115,8 +103,6 @@ export function CaptionsPanel({
         setSessionId(created.sessionId);
         setSyncReady(false);
         bufferRef.current = null;
-        sessionEpochRef.current = performance.now();
-        anchorRef.current = initialPlaybackAnchor();
         setError(null);
 
         let after = 0;
@@ -126,10 +112,6 @@ export function CaptionsPanel({
           if (cancelled) return;
           if (typeof response.audioBufferedMs === 'number') {
             bufferRef.current = { bufferedMs: response.audioBufferedMs, atMs: performance.now() };
-            // True session-axis zero is the first buffered byte (after the
-            // burst discard), not the create response — correct the epoch so
-            // karaoke wall-clock re-anchoring sits on the right axis.
-            sessionEpochRef.current = performance.now() - response.audioBufferedMs;
             setBufferVersion((version) => version + 1);
           }
           if (response.chunks.length > 0) {
@@ -185,23 +167,11 @@ export function CaptionsPanel({
     return () => onAudioUrlChange(null);
   }, [active, delaySeconds, onAudioUrlChange, paused, sessionId, syncReady]);
 
-  // Re-anchor on every arriving chunk: MP3 currentTime drift over minutes
-  // would otherwise walk the highlight away from the audible word.
-  useEffect(() => {
-    if (!sessionId || !syncReady || sessionEpochRef.current === null) return;
-    const audio = getAudioElement();
-    if (!audio || audio.currentTime < 0.05) return;
-    anchorRef.current = reanchorPlayback({
-      anchor: anchorRef.current,
-      clientNowMs: performance.now(),
-      sessionEpochMs: sessionEpochRef.current,
-      relayDelayMs: delaySeconds * 1000,
-      audioCurrentTimeSeconds: audio.currentTime,
-    });
-  }, [chunks, delaySeconds, getAudioElement, sessionId, syncReady]);
-
   // Karaoke tick: cheap rAF loop mapping audio.currentTime onto the session
-  // axis and updating which word span glows.
+  // axis and updating which word span glows. currentTime IS the session
+  // clock: the relay serves every connection from session offset 0, so no
+  // wall-clock correction is needed (or safe — every client-side estimate
+  // of the session start is off by connect/buffer latency).
   useEffect(() => {
     if (!sessionId || paused || !active || !syncReady) {
       setKaraoke(IDLE_KARAOKE);
@@ -211,7 +181,7 @@ export function CaptionsPanel({
     const tick = () => {
       const audio = getAudioElement();
       if (audio && !audio.paused && audio.currentTime > 0) {
-        const sessionMs = sessionTimeAt(anchorRef.current, audio.currentTime);
+        const sessionMs = sessionTimeAt(audio.currentTime);
         const chunk = findActiveChunk(chunks, sessionMs);
         if (chunk?.words && chunk.words.length > 0) {
           const idx = findActiveWordIndex(chunk.words, sessionMs);

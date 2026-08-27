@@ -23,6 +23,8 @@ export interface CaptionResult {
 interface AudioByteChunk {
   data: Uint8Array;
   receivedAt: number;
+  /** Monotonic position in the stream, so relay connections keep private cursors. */
+  seq: number;
 }
 
 interface ResultWaiter {
@@ -71,6 +73,7 @@ export class CaptionSession {
   private readonly onError: (error: unknown) => void;
   private results: CaptionResult[] = [];
   private audioBytes: AudioByteChunk[] = [];
+  private audioSeq = 0;
   private resultWaiters: ResultWaiter[] = [];
   private audioWaiters: AudioWaiter[] = [];
   private nextSeq = 1;
@@ -196,22 +199,26 @@ export class CaptionSession {
     return this.sessionStartMs === null ? null : this.now() - this.sessionStartMs;
   }
 
+  /**
+   * Every connection reads the shared buffer through its own cursor and always
+   * starts from the oldest byte (session offset 0). Browsers routinely open
+   * more than one connection to a media URL (preload probes, dev-mode double
+   * mounts); when consumption was destructive, the connection that actually
+   * played started wherever the previous one stopped, silently shifting
+   * audio.currentTime against the session axis and desyncing the karaoke.
+   */
   async *audioRelay(delaySeconds: number): AsyncGenerator<Uint8Array> {
     this.touch();
     const delayMs = Math.max(0, delaySeconds * 1000);
-    let index = 0;
+    let lastSeq = 0;
     while (!this.stopped) {
       this.touch();
       const cutoff = this.now() - delayMs;
-      while (index < this.audioBytes.length) {
-        const chunk = this.audioBytes[index];
-        if (!chunk || chunk.receivedAt > cutoff) break;
-        index += 1;
+      for (const chunk of this.audioBytes) {
+        if (chunk.seq <= lastSeq) continue;
+        if (chunk.receivedAt > cutoff) break;
+        lastSeq = chunk.seq;
         yield chunk.data;
-      }
-      if (index > 0) {
-        this.audioBytes = this.audioBytes.slice(index);
-        index = 0;
       }
       await this.waitForAudio(Math.min(1000, Math.max(100, delayMs)));
     }
@@ -344,7 +351,7 @@ export class CaptionSession {
     // first surviving byte. audio.currentTime=0 on the client then lines up
     // with session-offset 0, and chunk/word timings sit on the same axis.
     if (this.sessionStartMs === null) this.sessionStartMs = receivedAt;
-    this.audioBytes.push({ data, receivedAt });
+    this.audioBytes.push({ data, receivedAt, seq: ++this.audioSeq });
     const oldest = receivedAt - this.maxAudioBufferMs;
     while (this.audioBytes.length > 0 && (this.audioBytes[0]?.receivedAt ?? receivedAt) < oldest) this.audioBytes.shift();
     this.wakeAudioWaiters();

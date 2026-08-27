@@ -129,6 +129,44 @@ describe('normalizeFlatWords', () => {
     ]);
   });
 
+  it('prefers DTW-aligned times (t_dtw = token end, centiseconds) over interpolated start/end', () => {
+    // Without --dtw, whisper.cpp start/end are the segment duration spread
+    // evenly across tokens — off by seconds around pauses. t_dtw is measured.
+    expect(
+      normalizeFlatWords([
+        { word: ' Está', start: 0.06, end: 0.4, t_dtw: 36 },
+        { word: ' hay', start: 1.28, end: 1.56, t_dtw: 156 },
+        { word: ' que', start: 1.61, end: 1.68, t_dtw: 166 },
+      ]),
+    ).toEqual([
+      { word: 'Está', startMs: 0, endMs: 360 },
+      { word: 'hay', startMs: 360, endMs: 1560 },
+      { word: 'que', startMs: 1560, endMs: 1660 },
+    ]);
+  });
+
+  it('spans DTW subword tokens first-to-last when merging them into a word', () => {
+    expect(
+      normalizeFlatWords([
+        { word: ' pue', start: 2.28, end: 2.34, t_dtw: 240 },
+        { word: 'bl', start: 2.34, end: 2.46, t_dtw: 248 },
+        { word: 'os', start: 2.46, end: 2.6, t_dtw: 252 },
+      ]),
+    ).toEqual([{ word: 'pueblos', startMs: 1900, endMs: 2520 }]);
+  });
+
+  it('ignores t_dtw when DTW was disabled (-1) and keeps interpolated times', () => {
+    expect(
+      normalizeFlatWords([
+        { word: 'Hola', start: 0.1, end: 0.48, t_dtw: -1 },
+        { word: 'mundo', start: 0.62, end: 1.1, t_dtw: -1 },
+      ]),
+    ).toEqual([
+      { word: 'Hola', startMs: 100, endMs: 480 },
+      { word: 'mundo', startMs: 620, endMs: 1100 },
+    ]);
+  });
+
   it('returns null when nothing is usable so callers can fall back to chunk-level captions', () => {
     expect(normalizeFlatWords(undefined)).toBeNull();
     expect(normalizeFlatWords([])).toBeNull();

@@ -36,6 +36,13 @@ interface FlatWord {
   /** whisper.cpp uses `t0`/`t1` in centiseconds on some builds. */
   t0?: unknown;
   t1?: unknown;
+  /**
+   * DTW-aligned token timestamp in centiseconds (whisper.cpp --dtw), marking
+   * roughly the END of the token. -1 when DTW is off. This is the only
+   * *measured* timing whisper.cpp reports — start/end are linear interpolation
+   * across the segment and drift by seconds around pauses and music.
+   */
+  t_dtw?: unknown;
   offsets?: { from?: unknown; to?: unknown } | null;
 }
 
@@ -162,7 +169,7 @@ function normalizeSeconds(word: FlatWord): { startMs: number; endMs: number } | 
 export function normalizeFlatWords(words: unknown): WordTiming[] | null {
   if (!Array.isArray(words) || words.length === 0) return null;
 
-  const entries: { raw: string; startMs: number; endMs: number }[] = [];
+  const entries: { raw: string; startMs: number; endMs: number; dtwMs: number | null }[] = [];
   for (const raw of words) {
     if (!raw || typeof raw !== 'object') continue;
     const entry = raw as FlatWord;
@@ -170,9 +177,24 @@ export function normalizeFlatWords(words: unknown): WordTiming[] | null {
     if (wordText.trim().length === 0 || isControlToken(wordText.trim())) continue;
     const times = normalizeSeconds(entry);
     if (!times) continue;
-    entries.push({ raw: wordText, startMs: times.startMs, endMs: Math.max(times.startMs, times.endMs) });
+    const dtwMs = typeof entry.t_dtw === 'number' && entry.t_dtw >= 0 ? entry.t_dtw * 10 : null;
+    entries.push({ raw: wordText, startMs: times.startMs, endMs: Math.max(times.startMs, times.endMs), dtwMs });
   }
   if (entries.length === 0) return null;
+
+  // Prefer DTW-aligned times when the clip has them: t_dtw marks each token's
+  // end, so a token spans [previous token's end, own t_dtw]. The interpolated
+  // start/end fields are kept only as a fallback for non-DTW builds.
+  const dtwCount = entries.filter((entry) => entry.dtwMs !== null).length;
+  if (dtwCount >= 2 && dtwCount >= entries.length * 0.8) {
+    let prevEndMs = -1;
+    for (const entry of entries) {
+      const endMs = entry.dtwMs !== null ? Math.max(entry.dtwMs, prevEndMs) : prevEndMs;
+      entry.startMs = prevEndMs < 0 ? Math.max(0, endMs - 500) : prevEndMs;
+      entry.endMs = Math.max(entry.startMs, endMs);
+      prevEndMs = entry.endMs;
+    }
+  }
 
   const tokenStyle = entries.some((entry) => /^\s/.test(entry.raw) && entry.raw.trim().length > 0);
   if (tokenStyle) {

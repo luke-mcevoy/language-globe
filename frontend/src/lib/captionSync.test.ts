@@ -1,12 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  classifyWord,
-  findActiveChunk,
-  findActiveWordIndex,
-  initialPlaybackAnchor,
-  reanchorPlayback,
-  sessionTimeAt,
-} from './captionSync';
+import { classifyWord, findActiveChunk, findActiveWordIndex, sessionTimeAt } from './captionSync';
 
 const words = [
   { startMs: 0, endMs: 200 },
@@ -57,63 +50,10 @@ describe('classifyWord', () => {
   });
 });
 
-describe('playback anchor', () => {
-  it('starts with a zero base offset so audio.currentTime maps straight onto session time', () => {
-    const anchor = initialPlaybackAnchor();
-    expect(sessionTimeAt(anchor, 0)).toBe(0);
-    expect(sessionTimeAt(anchor, 12.5)).toBe(12_500);
-  });
-
-  it('trusts audio.currentTime when the wall-clock estimate only disagrees by startup lag', () => {
-    // Session started 25s ago, relay delay 20s → wall estimate says session
-    // offset 5000ms. The audio element started ~3s late (connect +
-    // pre-buffer), so it is genuinely playing offset 2000ms. currentTime is
-    // the truth; the anchor must NOT snap the highlight 3s ahead.
-    const anchor = reanchorPlayback({
-      anchor: initialPlaybackAnchor(),
-      clientNowMs: 25_000,
-      sessionEpochMs: 0,
-      relayDelayMs: 20_000,
-      audioCurrentTimeSeconds: 2,
-    });
-    expect(sessionTimeAt(anchor, 2)).toBe(2_000);
-    expect(sessionTimeAt(anchor, 2.5)).toBe(2_500);
-  });
-
-  it('tolerates the switch margin plus startup lag without snapping', () => {
-    // Switch waits for delay+8s of buffer, player takes ~2s to start: the
-    // wall estimate leads currentTime by ~10s. Still the honest case.
-    const anchor = reanchorPlayback({
-      anchor: initialPlaybackAnchor(),
-      clientNowMs: 32_000,
-      sessionEpochMs: 0,
-      relayDelayMs: 20_000,
-      audioCurrentTimeSeconds: 2,
-    });
-    expect(sessionTimeAt(anchor, 2)).toBe(2_000);
-  });
-
-  it('snaps to the wall-clock estimate only on gross desync (audio element reconnected)', () => {
-    // currentTime restarted at ~1s while the session is 60s in (20s delay →
-    // expected offset 40000ms). A 39s disagreement means the element
-    // reconnected mid-session and its clock no longer maps onto the axis.
-    const anchor = reanchorPlayback({
-      anchor: initialPlaybackAnchor(),
-      clientNowMs: 60_000,
-      sessionEpochMs: 0,
-      relayDelayMs: 20_000,
-      audioCurrentTimeSeconds: 1,
-    });
-    expect(sessionTimeAt(anchor, 1)).toBe(40_000);
-    // And once snapped, ordinary residual disagreement is left alone again.
-    const stable = reanchorPlayback({
-      anchor,
-      clientNowMs: 65_000,
-      sessionEpochMs: 0,
-      relayDelayMs: 20_000,
-      audioCurrentTimeSeconds: 5.8,
-    });
-    expect(stable).toBe(anchor);
+describe('sessionTimeAt', () => {
+  it('maps audio.currentTime straight onto session time — the relay serves every connection from offset 0', () => {
+    expect(sessionTimeAt(0)).toBe(0);
+    expect(sessionTimeAt(12.5)).toBe(12_500);
   });
 });
 

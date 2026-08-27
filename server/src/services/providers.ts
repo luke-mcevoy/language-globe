@@ -211,11 +211,14 @@ async function ensureWhisperServer(): Promise<void> {
   if (whisperServer && !whisperServer.killed && whisperServer.exitCode === null) return whisperServerReady ?? Promise.resolve();
 
   const language = targetLanguageCode(config.targetLanguage) ?? config.targetLanguage;
-  whisperServer = spawn(
-    config.whisperServerBin,
-    ['-m', config.whisperModelPath, '-l', language, '--port', String(config.whisperServerPort), '--host', config.whisperServerHost],
-    { stdio: ['ignore', 'ignore', 'pipe'] },
-  );
+  const args = ['-m', config.whisperModelPath, '-l', language, '--port', String(config.whisperServerPort), '--host', config.whisperServerHost];
+  if (config.whisperDtwPreset) {
+    // DTW gives real token-level timestamps (t_dtw); without it whisper.cpp
+    // interpolates times evenly across each segment and karaoke can't line up.
+    // whisper.cpp disables DTW silently when flash-attention is on, so turn it off.
+    args.push('--dtw', config.whisperDtwPreset, '--no-flash-attn');
+  }
+  whisperServer = spawn(config.whisperServerBin, args, { stdio: ['ignore', 'ignore', 'pipe'] });
   whisperServer.stderr?.on('data', () => undefined);
   whisperServer.on('exit', () => {
     whisperServer = null;

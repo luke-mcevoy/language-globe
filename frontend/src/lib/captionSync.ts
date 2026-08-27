@@ -2,15 +2,13 @@
  * Karaoke timing helpers for Sync-mode captions (see PLAN-CAPTIONS-V3.md).
  *
  * The server exposes every chunk and word on a single session time axis
- * (ms since the first byte of relayed audio). On the client, the audio
- * element's `currentTime` is a monotonic reading of how much of that same
- * stream has played, so `audio.currentTime * 1000 + baseOffsetMs` gives
- * the session time currently being HEARD.
- *
- * `baseOffsetMs` starts at 0 (a fresh sync-mode session begins near
- * audio.currentTime=0 ≈ session-offset 0) and is re-anchored on each new
- * chunk that arrives: MP3 frame quantization + VBR make raw currentTime
- * drift over minutes.
+ * (ms since the first byte of relayed audio). The relay serves EVERY
+ * connection — first connect, browser preload probes, reconnects — from
+ * session offset 0, so the audio element's `currentTime` IS the session
+ * clock: `currentTime * 1000` is the session time currently being heard.
+ * No wall-clock correction is applied; every estimate of "when the session
+ * started" from the client side is off by connect/buffer latency and
+ * historically pushed the highlight seconds ahead of the audio.
  */
 
 export interface WordWithBounds {
@@ -25,48 +23,8 @@ export interface ChunkTiming {
   words?: readonly WordWithBounds[];
 }
 
-export interface PlaybackAnchor {
-  baseOffsetMs: number;
-}
-
-export const initialPlaybackAnchor = (): PlaybackAnchor => ({ baseOffsetMs: 0 });
-
-export function sessionTimeAt(anchor: PlaybackAnchor, audioCurrentTimeSeconds: number): number {
-  return audioCurrentTimeSeconds * 1000 + anchor.baseOffsetMs;
-}
-
-/**
- * The audio element's currentTime is the authoritative clock: the relay
- * serves the stream from session-offset 0, so currentTime maps 1:1 onto the
- * word timestamps regardless of when playback managed to start. The
- * wall-clock estimate (client time since session start minus the relay
- * delay) is only a coarse sanity check — it is systematically wrong by the
- * player's startup lag (connect + pre-buffer, easily seconds), so snapping
- * to it continuously pushes the highlight AHEAD of the audio. We therefore
- * re-anchor only when the two clocks disagree so badly that the audio
- * element must have reconnected mid-session (its currentTime restarts at 0
- * while the relay resumes mid-stream).
- */
-export function reanchorPlayback(params: {
-  anchor: PlaybackAnchor;
-  clientNowMs: number;
-  sessionEpochMs: number;
-  relayDelayMs: number;
-  audioCurrentTimeSeconds: number;
-  /**
-   * How far the clocks may disagree before we snap to the wall estimate.
-   * Must exceed the worst honest disagreement: the switch margin (~8s) plus
-   * player startup lag — otherwise we would "correct" ordinary startup into
-   * a permanent lead. Reconnect desyncs grow with playback position, so
-   * they still clear this bar within a chunk or two.
-   */
-  toleranceMs?: number;
-}): PlaybackAnchor {
-  const toleranceMs = params.toleranceMs ?? 15_000;
-  const expectedSessionMs = params.clientNowMs - params.sessionEpochMs - params.relayDelayMs;
-  const audioSessionMs = sessionTimeAt(params.anchor, params.audioCurrentTimeSeconds);
-  if (Math.abs(expectedSessionMs - audioSessionMs) <= toleranceMs) return params.anchor;
-  return { baseOffsetMs: expectedSessionMs - params.audioCurrentTimeSeconds * 1000 };
+export function sessionTimeAt(audioCurrentTimeSeconds: number): number {
+  return audioCurrentTimeSeconds * 1000;
 }
 
 /**

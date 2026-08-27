@@ -91,6 +91,60 @@ describe('CaptionSessionStore', () => {
     store.clear();
   });
 
+  it('reclaims orphaned sessions at the cap so surfing stations cannot lock captions out', async () => {
+    // Orphan: created but never polled (its create response never reached the
+    // client, e.g. the browser moved on to another station). It must not hold
+    // a cap slot against a new, different station.
+    let clock = 0;
+    const now = () => clock;
+    const openSource = async () => ({
+      url: station.url,
+      contentType: 'audio/mpeg',
+      extension: 'mp3',
+      body: new ReadableStream<Uint8Array>({ start: () => undefined }),
+      cleanup: async () => undefined,
+    });
+    const store = new CaptionSessionStore({ maxSessions: 2, now, openSource, transcribe: async () => ({ text: '' }) });
+
+    const orphanA = await store.create(station);
+    const orphanB = await store.create({ ...station, id: 'station-2' });
+    expect(store.size).toBe(2);
+
+    clock += 6_000; // past the 5s orphan grace period, well under the stale threshold
+
+    const fresh = await store.create({ ...station, id: 'station-3' });
+    expect(store.get(orphanA.id)).toBeNull();
+    expect(store.get(orphanB.id)).toBeNull();
+    expect(store.get(fresh.id)).toBe(fresh);
+
+    store.clear();
+  });
+
+  it('keeps actively polled sessions when reclaiming at the cap', async () => {
+    let clock = 0;
+    const now = () => clock;
+    const openSource = async () => ({
+      url: station.url,
+      contentType: 'audio/mpeg',
+      extension: 'mp3',
+      body: new ReadableStream<Uint8Array>({ start: () => undefined }),
+      cleanup: async () => undefined,
+    });
+    const store = new CaptionSessionStore({ maxSessions: 2, now, openSource, transcribe: async () => ({ text: '' }) });
+
+    const live = await store.create(station);
+    const orphan = await store.create({ ...station, id: 'station-2' });
+    clock += 6_000;
+    live.touch(); // an active client polls continuously
+
+    const fresh = await store.create({ ...station, id: 'station-3' });
+    expect(store.get(live.id)).toBe(live);
+    expect(store.get(orphan.id)).toBeNull();
+    expect(store.get(fresh.id)).toBe(fresh);
+
+    store.clear();
+  });
+
   it('replaces an existing session for the same station instead of counting it against the cap', () => {
     const store = new CaptionSessionStore({ maxSessions: 2 });
     const first = new CaptionSession(station);

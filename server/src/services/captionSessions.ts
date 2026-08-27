@@ -59,6 +59,9 @@ export class CaptionSession {
   readonly chunkSeconds: number;
   contentType = 'audio/mpeg';
   lastPollAt: string;
+  createdAtMs: number;
+  lastPollAtMs: number;
+  everPolled = false;
 
   private readonly maxResults: number;
   private readonly maxAudioBufferMs: number;
@@ -96,6 +99,8 @@ export class CaptionSession {
     this.onError = options.onError ?? (() => undefined);
     this.createdAt = new Date(this.now()).toISOString();
     this.lastPollAt = this.createdAt;
+    this.createdAtMs = this.now();
+    this.lastPollAtMs = this.createdAtMs;
   }
 
   get snapshot(): CaptionSessionSnapshot {
@@ -124,6 +129,8 @@ export class CaptionSession {
 
   touch(): void {
     this.lastPollAt = new Date(this.now()).toISOString();
+    this.lastPollAtMs = this.now();
+    this.everPolled = true;
   }
 
   appendResult(
@@ -364,6 +371,7 @@ export class CaptionSessionStore {
   readonly maxSessions: number;
   readonly expireMs: number;
   readonly longPollMs: number;
+  private readonly now: () => number;
   private readonly sessionOptions: CaptionSessionOptions;
   private readonly sessions = new Map<string, { session: CaptionSession; expiry: ReturnType<typeof setTimeout> }>();
   /** Serializes create(); see the comment inside create for why. */
@@ -373,6 +381,7 @@ export class CaptionSessionStore {
     this.maxSessions = options.maxSessions ?? 2;
     this.expireMs = options.expireMs ?? 10 * 60_000;
     this.longPollMs = options.longPollMs ?? 25_000;
+    this.now = options.now ?? Date.now;
     this.sessionOptions = options;
   }
 
@@ -404,8 +413,26 @@ export class CaptionSessionStore {
     return run;
   }
 
+  /**
+   * Reclaim sessions nobody is reading. A live client long-polls continuously
+   * (25s max wait), so its lastPollAt is always fresh; a session that has
+   * never been polled a few seconds after create is an orphan whose create
+   * response never reached the client (e.g. the browser aborted the request
+   * while switching stations, so the client never learned the id to delete).
+   */
+  private evictAbandonedSessions(): void {
+    const now = this.now();
+    for (const [id, entry] of this.sessions) {
+      const { session } = entry;
+      const neverPolledOrphan = !session.everPolled && now - session.createdAtMs > 5_000;
+      const stale = now - session.lastPollAtMs > this.longPollMs + 15_000;
+      if (neverPolledOrphan || stale) this.delete(id);
+    }
+  }
+
   private async createSerialized(station: Station): Promise<CaptionSession> {
     this.evictStationSessions(station.id);
+    if (this.sessions.size >= this.maxSessions) this.evictAbandonedSessions();
 
     if (this.sessions.size >= this.maxSessions) {
       throw new CaptureError('stream_failed', 'Too many caption sessions are active. Close captions in another tab and try again.');

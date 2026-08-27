@@ -37,8 +37,9 @@ export function CaptionsPanel({ chunkSeconds, enabled, onClose, paused, station,
     async function loop() {
       setPending(true);
       try {
-        controller = new AbortController();
-        const created = await startCaptionSession(stationId, controller.signal);
+        // Not abortable: an aborted create leaks the session server-side
+        // because we never learn the id we would need to delete.
+        const created = await startCaptionSession(stationId);
         session = created.sessionId;
         if (cancelled) {
           // Cleanup ran before the id arrived; release the session ourselves.

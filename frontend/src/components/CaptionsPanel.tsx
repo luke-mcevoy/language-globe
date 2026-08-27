@@ -95,8 +95,10 @@ export function CaptionsPanel({
     async function loop() {
       setPending(true);
       try {
-        controller = new AbortController();
-        const created = await startCaptionSession(station.id, controller.signal);
+        // Deliberately not abortable: if the panel closes (or the station
+        // changes) mid-create, we still need the response so we can delete
+        // the session we asked for — an aborted create leaks it server-side.
+        const created = await startCaptionSession(station.id);
         session = created.sessionId;
         if (cancelled) {
           // The panel closed while the create was in flight; the cleanup ran

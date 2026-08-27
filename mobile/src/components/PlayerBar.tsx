@@ -9,8 +9,10 @@ interface PlayerBarProps {
   captionsOpen: boolean;
   quizEnabled: boolean;
   quizOpen: boolean;
+  isFavorited: boolean;
   onCaptions: () => void;
   onQuiz: () => void;
+  onToggleFavorite: () => void;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -21,7 +23,17 @@ const STATUS_LABEL: Record<string, string> = {
   error: 'Stream failed',
 };
 
-export function PlayerBar({ captionsEnabled, captionsOpen, onCaptions, onQuiz, quizEnabled, quizOpen, radio }: PlayerBarProps) {
+export function PlayerBar({
+  captionsEnabled,
+  captionsOpen,
+  isFavorited,
+  onCaptions,
+  onQuiz,
+  onToggleFavorite,
+  quizEnabled,
+  quizOpen,
+  radio,
+}: PlayerBarProps) {
   const now = useClock();
   const { station, status } = radio;
 
@@ -53,6 +65,15 @@ export function PlayerBar({ captionsEnabled, captionsOpen, onCaptions, onQuiz, q
           <Text style={styles.name} numberOfLines={1}>
             {station.name}
           </Text>
+          <Pressable
+            style={({ pressed }) => [styles.heart, isFavorited && styles.heartOn, pressed && styles.pressed]}
+            onPress={onToggleFavorite}
+            accessibilityRole="button"
+            accessibilityLabel={isFavorited ? 'Remove from favorites' : 'Save to favorites'}
+            accessibilityState={{ selected: isFavorited }}
+          >
+            <Text style={[styles.heartText, isFavorited && styles.heartTextOn]}>♥</Text>
+          </Pressable>
           <Text style={styles.codec}>{station.codec || 'stream'}</Text>
         </View>
         <Text style={styles.meta} numberOfLines={1}>
@@ -278,5 +299,28 @@ const styles = StyleSheet.create({
   },
   disabled: {
     opacity: 0.45,
+  },
+  heart: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  heartOn: {
+    backgroundColor: 'rgba(255,207,106,0.18)',
+    borderColor: 'rgba(255,207,106,0.55)',
+  },
+  heartText: {
+    color: '#b6c2da',
+    fontSize: 15,
+    fontWeight: '900',
+    lineHeight: 17,
+  },
+  heartTextOn: {
+    color: '#ffcf6a',
   },
 });

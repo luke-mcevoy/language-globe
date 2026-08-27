@@ -3,6 +3,8 @@ import type {
   CaptionPollResponse,
   CaptionSessionCreatedResponse,
   Difficulty,
+  Favorite,
+  FavoritesResponse,
   HealthResponse,
   QuizStartResponse,
   QuizSubmitResponse,
@@ -91,3 +93,11 @@ export const submitQuiz = (quizId: string, answers: (number | null)[]): Promise<
     method: 'POST',
     body: JSON.stringify({ quizId, answers }),
   });
+
+export const getFavorites = (): Promise<FavoritesResponse> => request<FavoritesResponse>('/api/favorites');
+
+export const addFavorite = (stationId: string): Promise<Favorite> =>
+  request<Favorite>(`/api/favorites/${encodeURIComponent(stationId)}`, { method: 'PUT' });
+
+export const removeFavorite = (stationId: string): Promise<void> =>
+  request<void>(`/api/favorites/${encodeURIComponent(stationId)}`, { method: 'DELETE' });

@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.js';
+import { createFavoritesStore } from './lib/favorites.js';
 import type { Difficulty, QuizQuestion } from './types.js';
 import type { QuizResultRow } from './lib/stats.js';
 
@@ -64,6 +65,12 @@ db.prepare('INSERT OR IGNORE INTO users (id, name, created_at) VALUES (?, ?, ?)'
   'you',
   new Date().toISOString(),
 );
+
+/**
+ * Favorites live in the same DB, but the table + statements are created inside
+ * the store so the same code can be pointed at an in-memory DB in tests.
+ */
+export const favoritesStore = createFavoritesStore(db);
 
 export interface StoredQuiz {
   id: string;

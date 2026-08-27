@@ -143,3 +143,13 @@ export interface HealthResponse {
   quizProvider: string;
   ffmpegAvailable: boolean;
 }
+
+export interface Favorite {
+  createdAt: string;
+  missing: boolean;
+  station: Station;
+}
+
+export interface FavoritesResponse {
+  favorites: Favorite[];
+}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { HeartIcon } from './FavoritesPanel';
 import { flagEmoji, isDaytimeAt, localTimeAt } from '../lib/format';
 import type { Radio } from '../hooks/useRadio';
 
@@ -8,8 +9,10 @@ interface PlayerBarProps {
   captionsOpen: boolean;
   quizEnabled: boolean;
   quizOpen: boolean;
+  isFavorited: boolean;
   onCaptions: () => void;
   onQuiz: () => void;
+  onToggleFavorite: () => void;
 }
 
 function useClock(intervalMs = 30_000): Date {
@@ -32,8 +35,10 @@ const STATUS_LABEL: Record<string, string> = {
 export function PlayerBar({
   captionsEnabled,
   captionsOpen,
+  isFavorited,
   onCaptions,
   onQuiz,
+  onToggleFavorite,
   quizEnabled,
   quizOpen,
   radio,
@@ -75,6 +80,16 @@ export function PlayerBar({
           <h2 className="player__name" title={station.name}>
             {station.name}
           </h2>
+          <button
+            type="button"
+            className={`player__heart${isFavorited ? ' player__heart--on' : ''}`}
+            onClick={onToggleFavorite}
+            aria-label={isFavorited ? 'Remove from favorites' : 'Save to favorites'}
+            aria-pressed={isFavorited}
+            title={isFavorited ? 'Remove from favorites' : 'Save to favorites'}
+          >
+            <HeartIcon filled={isFavorited} />
+          </button>
           <span className="player__codec">
             {station.codec}
             {station.bitrate > 0 ? ` ${station.bitrate}k` : ''}

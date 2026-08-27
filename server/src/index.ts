@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { config } from './config.js';
 import { registerCaptionRoutes } from './routes/captions.js';
+import { registerFavoriteRoutes } from './routes/favorites.js';
 import { registerQuizRoutes } from './routes/quiz.js';
 import { registerStationRoutes } from './routes/stations.js';
 import { registerStatsRoutes } from './routes/stats.js';
@@ -47,6 +48,7 @@ await registerStationRoutes(app);
 await registerCaptionRoutes(app);
 await registerQuizRoutes(app);
 await registerStatsRoutes(app);
+await registerFavoriteRoutes(app);
 
 sweepTmpDir();
 

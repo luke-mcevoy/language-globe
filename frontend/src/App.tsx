@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiError, getHealth, getStations, getStats } from './api';
 import { CaptionsPanel } from './components/CaptionsPanel';
+import { FavoritesPanel } from './components/FavoritesPanel';
 import { GlobeView, KIND_COLORS } from './components/GlobeView';
 import { PlayerBar } from './components/PlayerBar';
 import { QuizPanel } from './components/QuizPanel';
@@ -10,6 +11,7 @@ import { QuizPanel } from './components/QuizPanel';
 const StatsPanel = lazy(() =>
   import('./components/StatsPanel').then((module) => ({ default: module.StatsPanel })),
 );
+import { useFavorites } from './hooks/useFavorites';
 import { useRadio } from './hooks/useRadio';
 import { titleCase } from './lib/format';
 import type { HealthResponse, Station, StatsResponse } from './types';
@@ -24,8 +26,10 @@ export function App() {
   const [quizOpen, setQuizOpen] = useState(false);
   const [captionsOpen, setCaptionsOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
+  const [favoritesOpen, setFavoritesOpen] = useState(false);
   const [globeReady, setGlobeReady] = useState(false);
   const radio = useRadio();
+  const favorites = useFavorites();
 
   const refreshStats = useCallback(async () => {
     try {
@@ -109,6 +113,7 @@ export function App() {
         setQuizOpen(false);
         setCaptionsOpen(false);
         setStatsOpen(false);
+        setFavoritesOpen(false);
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -130,6 +135,7 @@ export function App() {
         selected={selected}
         playing={radio.station}
         deadStations={radio.deadStations}
+        favoriteIds={favorites.ids}
         onSelect={tune}
         onReady={() => setGlobeReady(true)}
       />
@@ -161,6 +167,14 @@ export function App() {
           </button>
           <button type="button" className="button glass" onClick={openStats}>
             <span aria-hidden="true">◷</span> Progress
+          </button>
+          <button type="button" className="button glass" onClick={() => setFavoritesOpen(true)}>
+            <span aria-hidden="true">♥</span> Favorites
+            {favorites.favorites.length > 0 && (
+              <span className="button__badge" aria-hidden="true">
+                {favorites.favorites.length}
+              </span>
+            )}
           </button>
         </div>
       </header>
@@ -205,8 +219,12 @@ export function App() {
         captionsOpen={captionsOpen}
         quizEnabled={health?.quizEnabled ?? false}
         quizOpen={quizOpen}
+        isFavorited={radio.station ? favorites.isFavorite(radio.station.id) : false}
         onCaptions={() => setCaptionsOpen((open) => !open)}
         onQuiz={() => setQuizOpen(true)}
+        onToggleFavorite={() => {
+          if (radio.station) void favorites.toggle(radio.station);
+        }}
       />
 
       {captionsOpen && radio.station && (
@@ -243,6 +261,20 @@ export function App() {
             onClose={() => setStatsOpen(false)}
           />
         </Suspense>
+      )}
+
+      {favoritesOpen && (
+        <FavoritesPanel
+          favorites={favorites.favorites}
+          loading={favorites.loading}
+          error={favorites.error}
+          onClose={() => setFavoritesOpen(false)}
+          onTune={(station) => {
+            tune(station);
+            setFavoritesOpen(false);
+          }}
+          onRemove={(stationId) => void favorites.remove(stationId)}
+        />
       )}
 
       <div className={`boot${booting ? '' : ' boot--done'}`} aria-hidden={!booting}>

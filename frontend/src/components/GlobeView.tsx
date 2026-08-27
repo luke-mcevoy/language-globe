@@ -18,6 +18,8 @@ export const KIND_COLORS = {
   unknown: '#5b7fb5',
 } as const;
 
+/** Warm gold overrides the kind color so favorites read as a distinct pin. */
+export const FAVORITE_COLOR = '#ffcf6a';
 const DEAD_COLOR = '#3a4256';
 
 /**
@@ -84,6 +86,8 @@ interface GlobeViewProps {
   selected: Station | null;
   playing: Station | null;
   deadStations: ReadonlySet<string>;
+  /** Station ids the user has favorited. Rendered gold + slightly larger. */
+  favoriteIds: ReadonlySet<string>;
   onSelect: (station: Station) => void;
   /** Set once the textures are decoded, so the app can fade the loader out. */
   onReady?: () => void;
@@ -113,7 +117,15 @@ function useElementSize(): [React.RefObject<HTMLDivElement | null>, Size] {
   return [ref, size];
 }
 
-export function GlobeView({ stations, selected, playing, deadStations, onSelect, onReady }: GlobeViewProps) {
+export function GlobeView({
+  stations,
+  selected,
+  playing,
+  deadStations,
+  favoriteIds,
+  onSelect,
+  onReady,
+}: GlobeViewProps) {
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const [containerRef, size] = useElementSize();
   const [material, setMaterial] = useState<THREE.ShaderMaterial | null>(null);
@@ -210,9 +222,12 @@ export function GlobeView({ stations, selected, playing, deadStations, onSelect,
       const station = object as Station;
       const popularity = Math.log1p(station.clickcount) / Math.log1p(maxClicks);
       const base = 0.16 + popularity * 0.34;
-      return station.id === playing?.id ? base * 1.6 : base;
+      const scaled = station.id === playing?.id ? base * 1.6 : base;
+      // Favorited pins get a small extra bump so they still stand out even
+      // when the station is rarely clicked (i.e. would otherwise be tiny).
+      return favoriteIds.has(station.id) ? scaled * 1.25 : scaled;
     },
-    [maxClicks, playing],
+    [favoriteIds, maxClicks, playing],
   );
 
   const pointColor = useCallback(
@@ -220,9 +235,12 @@ export function GlobeView({ stations, selected, playing, deadStations, onSelect,
       const station = object as Station;
       if (deadStations.has(station.id)) return DEAD_COLOR;
       if (station.id === playing?.id) return '#ffffff';
+      // Favorites override the kind color: they are the user's collection, so
+      // they should read as "yours" first, "talk/music" second.
+      if (favoriteIds.has(station.id)) return FAVORITE_COLOR;
       return KIND_COLORS[station.kind];
     },
-    [deadStations, playing],
+    [deadStations, favoriteIds, playing],
   );
 
   const pointAltitude = useCallback(

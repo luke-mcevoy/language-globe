@@ -5,9 +5,11 @@ import { ApiError, getHealth, getStations, getStats } from './src/lib/api';
 import { titleCase } from './src/lib/format';
 import { GlobeView, KIND_COLORS } from './src/components/GlobeView';
 import { CaptionsPanel } from './src/components/CaptionsPanel';
+import { FavoritesPanel } from './src/components/FavoritesPanel';
 import { PlayerBar } from './src/components/PlayerBar';
 import { QuizPanel } from './src/components/QuizPanel';
 import { StatsPanel } from './src/components/StatsPanel';
+import { useFavorites } from './src/hooks/useFavorites';
 import { useRadio } from './src/hooks/useRadio';
 import type { HealthResponse, Station, StatsResponse } from './src/types';
 
@@ -21,8 +23,10 @@ export default function App() {
   const [captionsOpen, setCaptionsOpen] = useState(false);
   const [quizOpen, setQuizOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
+  const [favoritesOpen, setFavoritesOpen] = useState(false);
   const [globeReady, setGlobeReady] = useState(false);
   const radio = useRadio();
+  const favorites = useFavorites();
 
   const refreshStats = useCallback(async () => {
     try {
@@ -102,6 +106,7 @@ export default function App() {
         selected={selected}
         playing={radio.station}
         deadStations={radio.deadStations}
+        favoriteIds={favorites.ids}
         onSelect={tune}
         onReady={() => setGlobeReady(true)}
       />
@@ -129,6 +134,11 @@ export default function App() {
             </Pressable>
             <Pressable style={styles.actionButton} onPress={openStats}>
               <Text style={styles.actionText}>Progress</Text>
+            </Pressable>
+            <Pressable style={styles.actionButton} onPress={() => setFavoritesOpen(true)}>
+              <Text style={styles.actionText}>
+                ♥ {favorites.favorites.length > 0 ? favorites.favorites.length : ''}
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -172,8 +182,12 @@ export default function App() {
         captionsOpen={captionsOpen}
         quizEnabled={health?.quizEnabled ?? false}
         quizOpen={quizOpen}
+        isFavorited={radio.station ? favorites.isFavorite(radio.station.id) : false}
         onCaptions={() => setCaptionsOpen((open) => !open)}
         onQuiz={() => setQuizOpen(true)}
+        onToggleFavorite={() => {
+          if (radio.station) void favorites.toggle(radio.station);
+        }}
       />
 
       <QuizPanel
@@ -193,6 +207,19 @@ export default function App() {
         loading={stats.status === 'loading'}
         error={stats.status === 'error' ? stats.message : null}
         onClose={() => setStatsOpen(false)}
+      />
+
+      <FavoritesPanel
+        visible={favoritesOpen}
+        favorites={favorites.favorites}
+        loading={favorites.loading}
+        error={favorites.error}
+        onClose={() => setFavoritesOpen(false)}
+        onTune={(station) => {
+          tune(station);
+          setFavoritesOpen(false);
+        }}
+        onRemove={(stationId) => void favorites.remove(stationId)}
       />
 
       {booting && (

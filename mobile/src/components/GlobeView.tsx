@@ -19,6 +19,8 @@ export const KIND_COLORS = {
   unknown: '#5b7fb5',
 } as const;
 
+/** Warm gold overrides the kind color so favorites read as a distinct pin. */
+export const FAVORITE_COLOR = '#ffcf6a';
 const DEAD_COLOR = '#3a4256';
 const GLOBE_RADIUS = 100;
 
@@ -76,6 +78,8 @@ interface GlobeViewProps {
   selected: Station | null;
   playing: Station | null;
   deadStations: ReadonlySet<string>;
+  /** Station ids the user has favorited. Rendered gold + slightly larger. */
+  favoriteIds: ReadonlySet<string>;
   onSelect: (station: Station) => void;
   onReady: () => void;
 }
@@ -85,17 +89,25 @@ interface SceneState {
   globe: ThreeGlobe;
 }
 
-export function GlobeView({ stations, selected, playing, deadStations, onSelect, onReady }: GlobeViewProps) {
+export function GlobeView({
+  stations,
+  selected,
+  playing,
+  deadStations,
+  favoriteIds,
+  onSelect,
+  onReady,
+}: GlobeViewProps) {
   const sceneRef = useRef<SceneState | null>(null);
   const rotationRef = useRef({ x: -0.28, y: 0.25 });
   const distanceRef = useRef(285);
   const lastPinchRef = useRef<number | null>(null);
   const tapStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
-  const latestPropsRef = useRef({ stations, selected, playing, deadStations, onSelect });
+  const latestPropsRef = useRef({ stations, selected, playing, deadStations, favoriteIds, onSelect });
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [error, setError] = useState<string | null>(null);
 
-  latestPropsRef.current = { stations, selected, playing, deadStations, onSelect };
+  latestPropsRef.current = { stations, selected, playing, deadStations, favoriteIds, onSelect };
 
   const maxClicks = useMemo(
     () => stations.reduce((max, station) => Math.max(max, station.clickcount), 1),
@@ -113,12 +125,15 @@ export function GlobeView({ stations, selected, playing, deadStations, onSelect,
         const station = object as Station;
         if (deadStations.has(station.id)) return DEAD_COLOR;
         if (station.id === playing?.id) return '#ffffff';
+        // Favorites override the kind color so they read as "yours" first.
+        if (favoriteIds.has(station.id)) return FAVORITE_COLOR;
         return KIND_COLORS[station.kind];
       })
       .pointRadius((object) => {
         const station = object as Station;
         const popularity = Math.log1p(station.clickcount) / Math.log1p(maxClicks);
-        return 0.16 + popularity * 0.34 + (station.id === playing?.id ? 0.24 : 0);
+        const base = 0.16 + popularity * 0.34 + (station.id === playing?.id ? 0.24 : 0);
+        return favoriteIds.has(station.id) ? base * 1.25 : base;
       })
       .pointAltitude((object) => {
         const station = object as Station;
@@ -137,7 +152,7 @@ export function GlobeView({ stations, selected, playing, deadStations, onSelect,
       .ringMaxRadius((object) => (object as Ring).maxRadius)
       .ringPropagationSpeed(2)
       .ringRepeatPeriod((object) => (object as Ring).period);
-  }, [deadStations, maxClicks, playing, selected, stations]);
+  }, [deadStations, favoriteIds, maxClicks, playing, selected, stations]);
 
   useEffect(() => {
     if (!selected) return;

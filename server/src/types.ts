@@ -165,3 +165,18 @@ export interface HealthResponse {
   /** ffmpeg unlocks HLS (.m3u8) and AAC stations for quizzes. */
   ffmpegAvailable: boolean;
 }
+
+/**
+ * A saved station. `station` is always populated: hydrated from the live
+ * Radio Browser index when possible, otherwise reconstructed from the stored
+ * snapshot and flagged `missing`.
+ */
+export interface Favorite {
+  createdAt: string;
+  missing: boolean;
+  station: Station;
+}
+
+export interface FavoritesResponse {
+  favorites: Favorite[];
+}

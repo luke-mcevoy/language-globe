@@ -29,9 +29,28 @@ OPENAI_TRANSCRIBE_MODEL=whisper-1
 CAPTURE_SECONDS=60
 DB_PATH=data/language-globe.sqlite
 PORT=8787
+HOST=127.0.0.1
 ```
 
 `ffmpeg` is recommended for quiz capture from HLS, AAC, Ogg, or unlabeled radio streams. Plain MP3/M4A/WAV/WebM streams can be captured directly.
+
+## Mobile
+
+The Expo app lives in `mobile/` and uses the same Fastify API. For phone testing, expose the server on your LAN:
+
+```bash
+HOST=0.0.0.0 npm run dev:server
+cd mobile
+npx expo start
+```
+
+Scan the QR code with Expo Go. The app resolves the API URL from `EXPO_PUBLIC_API_URL` first, then from Expo's dev host with port `8787`, then falls back to `http://localhost:8787`.
+
+Use an explicit override when the automatic LAN address is not right:
+
+```bash
+EXPO_PUBLIC_API_URL=http://192.168.1.20:8787 npx expo start
+```
 
 ## Scripts
 

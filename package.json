@@ -6,7 +6,8 @@
   "type": "module",
   "workspaces": [
     "server",
-    "frontend"
+    "frontend",
+    "mobile"
   ],
   "scripts": {
     "dev": "concurrently -n server,web -c magenta,cyan \"npm:dev:server\" \"npm:dev:web\"",

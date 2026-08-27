@@ -34,6 +34,27 @@ HOST=127.0.0.1
 
 `ffmpeg` is recommended for quiz capture from HLS, AAC, Ogg, or unlabeled radio streams. Plain MP3/M4A/WAV/WebM streams can be captured directly.
 
+## Docker
+
+Every merge to `main` publishes a ready-to-run image to GitHub Container Registry (`.github/workflows/docker.yml`). The container serves the web UI and the API on one port and bundles ffmpeg:
+
+```bash
+docker run -p 8787:8787 ghcr.io/luke-mcevoy/language-globe:latest
+# open http://localhost:8787
+```
+
+The globe, live radio, favorites, and stats work with no configuration. Captions and quizzes need a model provider:
+
+```bash
+docker run -p 8787:8787 \
+  -e OPENAI_API_KEY=your_key_here \           # transcription + quiz fallback
+  -e OLLAMA_URL=http://host.docker.internal:11434 \  # optional: local quiz model
+  -v language-globe-data:/data \              # persist quiz history across restarts
+  ghcr.io/luke-mcevoy/language-globe:latest
+```
+
+Local whisper.cpp transcription is not bundled (the model weighs ~1.5 GB); inside Docker, transcription uses OpenAI when a key is set. To build the image yourself: `docker build -t language-globe .`
+
 ## Mobile
 
 The Expo app lives in `mobile/` and uses the same Fastify API. For phone testing, expose the server on your LAN:

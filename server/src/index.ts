@@ -1,6 +1,9 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
-import { config } from './config.js';
+import fastifyStatic from '@fastify/static';
+import { config, serverRoot } from './config.js';
 import { registerCaptionRoutes } from './routes/captions.js';
 import { registerFavoriteRoutes } from './routes/favorites.js';
 import { registerQuizRoutes } from './routes/quiz.js';
@@ -51,6 +54,22 @@ await registerQuizRoutes(app);
 await registerStatsRoutes(app);
 await registerFavoriteRoutes(app);
 await registerVocabRoutes(app);
+
+// Serve the built web app when it is present (the Docker image copies it to
+// ../frontend/dist), so one container serves both the API and the UI. In dev
+// the directory does not exist and Vite serves the frontend instead.
+const staticDir = process.env.STATIC_DIR ?? path.join(serverRoot, '../frontend/dist');
+if (fs.existsSync(path.join(staticDir, 'index.html'))) {
+  await app.register(fastifyStatic, { root: staticDir });
+  app.setNotFoundHandler(async (request, reply) => {
+    // SPA fallback: unknown non-API GETs get index.html so client-side
+    // routes survive a refresh; API 404s stay JSON.
+    if (request.raw.method === 'GET' && !request.url.startsWith('/api/')) {
+      return reply.type('text/html').sendFile('index.html');
+    }
+    return reply.code(404).send({ error: 'not_found', message: `No route for ${request.method} ${request.url}` });
+  });
+}
 
 sweepTmpDir();
 

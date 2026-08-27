@@ -231,6 +231,20 @@ export class CaptionSession {
     let windowStart = this.now();
     let droppingBurstWindow = true;
 
+    // Time-to-first-caption schedule. The icecast connect burst floods in
+    // within the first second or two, so 3s is plenty to discard it — a full
+    // 15s burst window made the first caption take >30s. After that, short
+    // ramp-up chunks get words on screen in seconds; steady-state chunks stay
+    // at chunkSeconds for transcription quality.
+    const BURST_WINDOW_MS = 3_000;
+    const RAMP_SECONDS = [4, 6, 10];
+    let rampIndex = 0;
+    const windowDurationMs = () => {
+      if (droppingBurstWindow) return BURST_WINDOW_MS;
+      const rampSeconds = RAMP_SECONDS[rampIndex];
+      return (rampSeconds ?? this.chunkSeconds) * 1000;
+    };
+
     const openWindow = async () => {
       await fsp.mkdir(config.tmpDir, { recursive: true });
       filePath = path.join(config.tmpDir, `caption-${this.id}-${randomUUID()}.${source.extension || 'mp3'}`);
@@ -256,6 +270,7 @@ export class CaptionSession {
         await fsp.rm(closingPath, { force: true }).catch(() => undefined);
         return;
       }
+      rampIndex += 1;
       if (closingBytes < 8 * 1024) {
         await fsp.rm(closingPath, { force: true }).catch(() => undefined);
         return;
@@ -305,7 +320,7 @@ export class CaptionSession {
           bytesInWindow += chunk.byteLength;
         }
 
-        if (this.now() - windowStart >= this.chunkSeconds * 1000) {
+        if (this.now() - windowStart >= windowDurationMs()) {
           await closeWindow();
           await openWindow();
         }

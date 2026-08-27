@@ -25,6 +25,7 @@ export const config = {
   dbPath: path.isAbsolute(dbPath) ? dbPath : path.join(serverRoot, dbPath),
   tmpDir: path.join(serverRoot, 'tmp'),
   captureSeconds: num(process.env.CAPTURE_SECONDS, 60),
+  captionChunkSeconds: num(process.env.CAPTION_CHUNK_SECONDS, 15),
   /** Hard ceiling on a capture so a fast stream can't fill the disk. */
   captureMaxBytes: num(process.env.CAPTURE_MAX_BYTES, 6 * 1024 * 1024),
   stationsCacheTtlMs: 6 * 60 * 60 * 1000,
@@ -32,6 +33,8 @@ export const config = {
 } as const;
 
 export const quizEnabled = (): boolean => config.openaiApiKey.length > 0;
+
+export const captionsEnabled = (): boolean => quizEnabled();
 
 /**
  * ISO-639-1 hint for the transcription model. Unknown languages simply get no

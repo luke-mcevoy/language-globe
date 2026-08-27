@@ -5,7 +5,10 @@ import type { Radio } from '../hooks/useRadio';
 
 interface PlayerBarProps {
   radio: Radio;
+  captionsEnabled: boolean;
+  captionsOpen: boolean;
   quizOpen: boolean;
+  onCaptions: () => void;
   onQuiz: () => void;
 }
 
@@ -17,7 +20,7 @@ const STATUS_LABEL: Record<string, string> = {
   error: 'Stream failed',
 };
 
-export function PlayerBar({ radio, quizOpen, onQuiz }: PlayerBarProps) {
+export function PlayerBar({ captionsEnabled, captionsOpen, onCaptions, onQuiz, quizOpen, radio }: PlayerBarProps) {
   const now = useClock();
   const { station, status } = radio;
 
@@ -77,6 +80,15 @@ export function PlayerBar({ radio, quizOpen, onQuiz }: PlayerBarProps) {
             <Text style={styles.volumeText}>+</Text>
           </Pressable>
         </View>
+        <Pressable
+          style={[styles.ccButton, captionsOpen && styles.ccButtonActive, !captionsEnabled && styles.disabled]}
+          onPress={onCaptions}
+          disabled={!captionsEnabled}
+          accessibilityRole="button"
+          accessibilityState={{ selected: captionsOpen, disabled: !captionsEnabled }}
+        >
+          <Text style={[styles.ccText, captionsOpen && styles.ccTextActive]}>CC</Text>
+        </Pressable>
         <Pressable
           style={[styles.quizButton, quizOpen && styles.disabled]}
           onPress={onQuiz}
@@ -243,6 +255,24 @@ const styles = StyleSheet.create({
   quizText: {
     color: '#ffffff',
     fontWeight: '800',
+  },
+  ccButton: {
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  ccButtonActive: {
+    backgroundColor: '#54e6c3',
+  },
+  ccText: {
+    color: '#dbe7ff',
+    fontWeight: '900',
+    fontSize: 12,
+  },
+  ccTextActive: {
+    color: '#07101a',
   },
   disabled: {
     opacity: 0.45,

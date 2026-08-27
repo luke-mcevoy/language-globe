@@ -84,6 +84,12 @@ export interface QuizSubmitResponse {
   transcript: string;
 }
 
+export interface CaptionsResponse {
+  text: string;
+  chunkSeconds: number;
+  capturedAt: string;
+}
+
 export interface DailyAccuracy {
   date: string;
   attempts: number;
@@ -122,8 +128,10 @@ export interface StatsResponse {
 export interface HealthResponse {
   ok: true;
   quizEnabled: boolean;
+  captionsEnabled: boolean;
   targetLanguage: string;
   captureSeconds: number;
+  captionChunkSeconds: number;
   /** ffmpeg unlocks HLS (.m3u8) and AAC stations for quizzes. */
   ffmpegAvailable: boolean;
 }

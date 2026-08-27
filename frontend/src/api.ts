@@ -1,4 +1,5 @@
 import type {
+  CaptionsResponse,
   Difficulty,
   HealthResponse,
   QuizStartResponse,
@@ -25,7 +26,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...init,
       headers: { 'Content-Type': 'application/json', ...init?.headers },
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
     throw new ApiError('offline', 'Cannot reach the Language Globe server. Is `npm run dev` running?', 0);
   }
 
@@ -42,6 +44,13 @@ export const getHealth = (): Promise<HealthResponse> => request<HealthResponse>(
 export const getStations = (): Promise<StationsResponse> => request<StationsResponse>('/api/stations');
 
 export const getStats = (): Promise<StatsResponse> => request<StatsResponse>('/api/stats');
+
+export const getCaptions = (stationId: string, signal?: AbortSignal): Promise<CaptionsResponse> =>
+  request<CaptionsResponse>('/api/captions', {
+    method: 'POST',
+    body: JSON.stringify({ stationId }),
+    signal,
+  });
 
 export const startQuiz = (stationId: string, difficulty: Difficulty): Promise<QuizStartResponse> =>
   request<QuizStartResponse>('/api/quiz/start', {

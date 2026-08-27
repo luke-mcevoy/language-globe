@@ -4,8 +4,11 @@ import type { Radio } from '../hooks/useRadio';
 
 interface PlayerBarProps {
   radio: Radio;
+  captionsEnabled: boolean;
+  captionsOpen: boolean;
   quizEnabled: boolean;
   quizOpen: boolean;
+  onCaptions: () => void;
   onQuiz: () => void;
 }
 
@@ -26,7 +29,15 @@ const STATUS_LABEL: Record<string, string> = {
   error: 'Stream failed',
 };
 
-export function PlayerBar({ radio, quizEnabled, quizOpen, onQuiz }: PlayerBarProps) {
+export function PlayerBar({
+  captionsEnabled,
+  captionsOpen,
+  onCaptions,
+  onQuiz,
+  quizEnabled,
+  quizOpen,
+  radio,
+}: PlayerBarProps) {
   const now = useClock();
   const { station, status } = radio;
 
@@ -106,9 +117,20 @@ export function PlayerBar({ radio, quizEnabled, quizOpen, onQuiz }: PlayerBarPro
 
       <button
         type="button"
+        className={`button player__cc${captionsOpen ? ' player__cc--active' : ''}`}
+        onClick={onCaptions}
+        disabled={!captionsEnabled}
+        aria-pressed={captionsOpen}
+        title={captionsEnabled ? 'Toggle live captions' : 'Needs an OpenAI API key'}
+      >
+        CC
+      </button>
+
+      <button
+        type="button"
         className="button button--accent player__quiz"
         onClick={onQuiz}
-        disabled={quizOpen}
+        disabled={!quizEnabled || quizOpen}
         title={quizEnabled ? 'Capture a minute of this station and quiz yourself' : 'Needs an OpenAI API key'}
       >
         Quiz me

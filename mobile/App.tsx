@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { ApiError, getHealth, getStations, getStats } from './src/lib/api';
 import { titleCase } from './src/lib/format';
 import { GlobeView, KIND_COLORS } from './src/components/GlobeView';
+import { CaptionsPanel } from './src/components/CaptionsPanel';
 import { PlayerBar } from './src/components/PlayerBar';
 import { QuizPanel } from './src/components/QuizPanel';
 import { StatsPanel } from './src/components/StatsPanel';
@@ -17,6 +18,7 @@ export default function App() {
   const [stations, setStations] = useState<Loadable<Station[]>>({ status: 'loading' });
   const [stats, setStats] = useState<Loadable<StatsResponse>>({ status: 'loading' });
   const [selected, setSelected] = useState<Station | null>(null);
+  const [captionsOpen, setCaptionsOpen] = useState(false);
   const [quizOpen, setQuizOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
   const [globeReady, setGlobeReady] = useState(false);
@@ -153,7 +155,23 @@ export default function App() {
         )}
       </SafeAreaView>
 
-      <PlayerBar radio={radio} quizOpen={quizOpen} onQuiz={() => setQuizOpen(true)} />
+      <CaptionsPanel
+        station={radio.station}
+        visible={captionsOpen}
+        enabled={health?.captionsEnabled ?? false}
+        paused={quizOpen}
+        chunkSeconds={health?.captionChunkSeconds ?? 15}
+        onClose={() => setCaptionsOpen(false)}
+      />
+
+      <PlayerBar
+        radio={radio}
+        captionsEnabled={health?.captionsEnabled ?? false}
+        captionsOpen={captionsOpen}
+        quizOpen={quizOpen}
+        onCaptions={() => setCaptionsOpen((open) => !open)}
+        onQuiz={() => setQuizOpen(true)}
+      />
 
       <QuizPanel
         visible={quizOpen}

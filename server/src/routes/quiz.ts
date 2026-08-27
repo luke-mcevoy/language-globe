@@ -161,6 +161,7 @@ export async function registerQuizRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/quiz/config', async () => ({
     enabled: quizEnabled(),
     captureSeconds: config.captureSeconds,
+    captionChunkSeconds: config.captionChunkSeconds,
     minSpeechWords: MIN_SPEECH_WORDS,
   }));
 }

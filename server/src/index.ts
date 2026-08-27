@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
-import { config, quizEnabled } from './config.js';
+import { captionsEnabled, config, quizEnabled } from './config.js';
+import { registerCaptionRoutes } from './routes/captions.js';
 import { registerQuizRoutes } from './routes/quiz.js';
 import { registerStationRoutes } from './routes/stations.js';
 import { registerStatsRoutes } from './routes/stats.js';
@@ -21,12 +22,15 @@ await app.register(cors, { origin: true });
 app.get('/api/health', async (): Promise<HealthResponse> => ({
   ok: true,
   quizEnabled: quizEnabled(),
+  captionsEnabled: captionsEnabled(),
   targetLanguage: config.targetLanguage,
   captureSeconds: config.captureSeconds,
+  captionChunkSeconds: config.captionChunkSeconds,
   ffmpegAvailable: await ffmpegAvailable(),
 }));
 
 await registerStationRoutes(app);
+await registerCaptionRoutes(app);
 await registerQuizRoutes(app);
 await registerStatsRoutes(app);
 

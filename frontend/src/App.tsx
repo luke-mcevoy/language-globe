@@ -1,5 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiError, getHealth, getStations, getStats } from './api';
+import { CaptionsPanel } from './components/CaptionsPanel';
 import { GlobeView, KIND_COLORS } from './components/GlobeView';
 import { PlayerBar } from './components/PlayerBar';
 import { QuizPanel } from './components/QuizPanel';
@@ -21,6 +22,7 @@ export function App() {
   const [stats, setStats] = useState<Loadable<StatsResponse>>({ status: 'loading' });
   const [selected, setSelected] = useState<Station | null>(null);
   const [quizOpen, setQuizOpen] = useState(false);
+  const [captionsOpen, setCaptionsOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
   const [globeReady, setGlobeReady] = useState(false);
   const radio = useRadio();
@@ -105,6 +107,7 @@ export function App() {
       }
       if (event.key === 'Escape') {
         setQuizOpen(false);
+        setCaptionsOpen(false);
         setStatsOpen(false);
       }
     };
@@ -198,10 +201,24 @@ export function App() {
 
       <PlayerBar
         radio={radio}
+        captionsEnabled={health?.captionsEnabled ?? false}
+        captionsOpen={captionsOpen}
         quizEnabled={health?.quizEnabled ?? false}
         quizOpen={quizOpen}
+        onCaptions={() => setCaptionsOpen((open) => !open)}
         onQuiz={() => setQuizOpen(true)}
       />
+
+      {captionsOpen && radio.station && (
+        <CaptionsPanel
+          station={radio.station}
+          active={captionsOpen}
+          enabled={health?.captionsEnabled ?? false}
+          paused={quizOpen}
+          chunkSeconds={health?.captionChunkSeconds ?? 15}
+          onClose={() => setCaptionsOpen(false)}
+        />
+      )}
 
       {quizOpen && radio.station && (
         <QuizPanel

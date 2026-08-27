@@ -632,12 +632,18 @@ code {
   z-index: 4;
   right: 20px;
   bottom: 122px;
-  width: min(440px, calc(100vw - 40px));
+  width: min(480px, calc(100vw - 40px));
   max-height: min(56vh, 520px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   animation: rise-in 220ms ease-out;
+  /* Reading surface: the shared .glass tint (62% opacity) lets the globe and
+     starfield bleed through the text, so captions get a near-opaque backdrop
+     and a stronger edge instead. */
+  background: rgba(7, 11, 20, 0.94);
+  border: 1px solid var(--hairline-strong);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
 }
 
 @keyframes rise-in {
@@ -741,21 +747,25 @@ code {
 
 .captions__chunk {
   color: var(--ink-secondary);
-  font-size: 15px;
+  font-size: 15.5px;
   line-height: 1.65;
   margin-bottom: 12px;
-  opacity: 0.62;
+  opacity: 0.72;
 }
 
 .captions__chunk--latest {
   color: var(--ink);
-  font-size: 16.5px;
+  font-size: 16px;
   opacity: 1;
 }
 
+/* The chunk being SPOKEN is the one the reader follows — it outranks the
+   newest transcribed chunk (which is ~20s ahead of the audio). */
 .captions__chunk--playing {
   padding-left: 12px;
   border-left: 2px solid var(--accent);
+  color: #f4f7ff;
+  font-size: 18px;
   opacity: 1;
 }
 
@@ -765,7 +775,7 @@ code {
 }
 
 .captions__word--past {
-  color: var(--ink-secondary);
+  color: var(--ink-muted);
 }
 
 .captions__word--current {
@@ -777,8 +787,10 @@ code {
   margin: -1px -3px;
 }
 
+/* Words about to be spoken are what the reader scans next — keep them
+   readable; only already-spoken words fade. */
 .captions__word--future {
-  color: var(--ink-muted);
+  color: #d7dff2;
 }
 
 .captions__music {

@@ -144,6 +144,8 @@ export interface HealthResponse {
   transcribeProvider: string;
   quizProvider: string;
   ffmpegAvailable: boolean;
+  /** True when the local SDXL-Turbo sidecar is reachable. */
+  scenesEnabled: boolean;
 }
 
 export interface Favorite {

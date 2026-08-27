@@ -166,6 +166,19 @@ export interface HealthResponse {
   quizProvider: string;
   /** ffmpeg unlocks HLS (.m3u8) and AAC stations for quizzes. */
   ffmpegAvailable: boolean;
+  /** True when the local SDXL-Turbo sidecar is reachable. */
+  scenesEnabled: boolean;
+}
+
+/** An AI-drawn ambient illustration of what the station is broadcasting. */
+export interface SceneResponse {
+  /** PNG as a data URL, ready for an <img> src. */
+  image: string;
+  /** The exact prompt the image model received (provenance for the UI). */
+  prompt: string;
+  basedOn: 'transcript' | 'station';
+  /** Generation time reported by the sidecar. */
+  seconds: number;
 }
 
 /**

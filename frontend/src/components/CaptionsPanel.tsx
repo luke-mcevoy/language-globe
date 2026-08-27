@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ApiError,
   captionSessionAudioUrl,
+  generateScene,
   lookupWord,
   pollCaptionSession,
   startCaptionSession,
@@ -21,7 +22,18 @@ interface CaptionsPanelProps {
   getAudioElement: () => HTMLAudioElement | null;
   onPauseAudio: () => void;
   onResumeAudio: () => void;
+  /** True when the local image sidecar is running; shows the scene card. */
+  scenesEnabled: boolean;
 }
+
+interface Scene {
+  src: string;
+  prompt: string;
+  key: number;
+}
+
+/** How often a fresh scene is drawn from the latest transcript. */
+const SCENE_INTERVAL_MS = 45_000;
 
 interface WordLookup {
   word: string;
@@ -69,6 +81,7 @@ export function CaptionsPanel({
   onPauseAudio,
   onResumeAudio,
   paused,
+  scenesEnabled,
   station,
 }: CaptionsPanelProps) {
   const [chunks, setChunks] = useState<CaptionChunk[]>([]);
@@ -86,6 +99,11 @@ export function CaptionsPanel({
   const [pinned, setPinned] = useState(true);
   const [lookup, setLookup] = useState<WordLookup | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
+  const [scene, setScene] = useState<Scene | null>(null);
+  const [prevScene, setPrevScene] = useState<Scene | null>(null);
+  const sceneRef = useRef<Scene | null>(null);
+  const sceneInflightRef = useRef(false);
+  const lastSceneAtRef = useRef(0);
   const bufferRef = useRef<{ bufferedMs: number; atMs: number } | null>(null);
   /** When the session was created — seeds the sync bar before the first poll reports real buffer fill. */
   const sessionStartRef = useRef<number | null>(null);
@@ -102,9 +120,47 @@ export function CaptionsPanel({
     setSyncProgress(0);
     setPinned(true);
     setLookup(null);
+    setScene(null);
+    setPrevScene(null);
+    sceneRef.current = null;
+    lastSceneAtRef.current = 0;
     bufferRef.current = null;
     pinnedRef.current = true;
   }, [station.id]);
+
+  // Ambient scene art: redraw from the freshest transcript every ~45s. The
+  // first request fires as soon as the session exists (the server falls back
+  // to a station-vibe prompt while there is no spoken text yet).
+  useEffect(() => {
+    if (!scenesEnabled || !sessionId) return;
+    let cancelled = false;
+
+    const tick = async () => {
+      if (cancelled || sceneInflightRef.current) return;
+      if (Date.now() - lastSceneAtRef.current < SCENE_INTERVAL_MS && sceneRef.current) return;
+      sceneInflightRef.current = true;
+      try {
+        const response = await generateScene(sessionId);
+        if (cancelled) return;
+        lastSceneAtRef.current = Date.now();
+        const next: Scene = { src: response.image, prompt: response.prompt, key: Date.now() };
+        setPrevScene(sceneRef.current);
+        setScene(next);
+        sceneRef.current = next;
+      } catch {
+        // Sidecar busy or warming up; the next tick retries.
+      } finally {
+        sceneInflightRef.current = false;
+      }
+    };
+
+    void tick();
+    const timer = window.setInterval(() => void tick(), 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [scenesEnabled, sessionId]);
 
   const handleWordClick = useCallback(
     (raw: string, context: string, target: HTMLElement) => {
@@ -365,6 +421,19 @@ export function CaptionsPanel({
           </button>
         </div>
       </header>
+
+      {scene && (
+        <figure className="captions__scene" title={scene.prompt}>
+          {prevScene && <img key={prevScene.key} className="captions__scene-img" src={prevScene.src} alt="" />}
+          <img
+            key={scene.key}
+            className="captions__scene-img captions__scene-img--in"
+            src={scene.src}
+            alt={scene.prompt}
+          />
+          <figcaption className="captions__scene-prompt">{scene.prompt}</figcaption>
+        </figure>
+      )}
 
       {!syncReady && !error && (
         <div className="captions__sync" role="status">

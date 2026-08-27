@@ -38,6 +38,8 @@ export const config = {
    */
   whisperDtwPreset: process.env.WHISPER_DTW_PRESET ?? 'large.v3.turbo',
   ollamaUrl: process.env.OLLAMA_URL ?? 'http://127.0.0.1:11434',
+  /** Local SDXL-Turbo sidecar (scene-server/run.sh) for ambient scene art. */
+  sceneServerUrl: process.env.SCENE_SERVER_URL ?? 'http://127.0.0.1:8790',
   ollamaModel: process.env.OLLAMA_MODEL ?? 'qwen2.5:7b-instruct',
   dbPath: path.isAbsolute(dbPath) ? dbPath : path.join(serverRoot, dbPath),
   tmpDir: path.join(serverRoot, 'tmp'),

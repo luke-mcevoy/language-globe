@@ -16,8 +16,6 @@ import {
 } from '../lib/captionSync';
 import type { CaptionChunk, Station } from '../types';
 
-type CaptionMode = 'synced' | 'live';
-
 interface CaptionsPanelProps {
   station: Station;
   active: boolean;
@@ -49,7 +47,6 @@ export function CaptionsPanel({
   const [chunks, setChunks] = useState<CaptionChunk[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<CaptionMode>('synced');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [karaoke, setKaraoke] = useState<KaraokeState>(IDLE_KARAOKE);
   // The sync relay can only serve audio once it has buffered `delaySeconds`
@@ -180,18 +177,18 @@ export function CaptionsPanel({
   }, [bufferVersion, delaySeconds, sessionId, syncReady]);
 
   useEffect(() => {
-    if (!sessionId || mode !== 'synced' || paused || !active || !syncReady) {
+    if (!sessionId || paused || !active || !syncReady) {
       onAudioUrlChange(null);
       return;
     }
     onAudioUrlChange(captionSessionAudioUrl(sessionId, delaySeconds));
     return () => onAudioUrlChange(null);
-  }, [active, delaySeconds, mode, onAudioUrlChange, paused, sessionId, syncReady]);
+  }, [active, delaySeconds, onAudioUrlChange, paused, sessionId, syncReady]);
 
   // Re-anchor on every arriving chunk: MP3 currentTime drift over minutes
   // would otherwise walk the highlight away from the audible word.
   useEffect(() => {
-    if (mode !== 'synced' || !sessionId || !syncReady || sessionEpochRef.current === null) return;
+    if (!sessionId || !syncReady || sessionEpochRef.current === null) return;
     const audio = getAudioElement();
     if (!audio || audio.currentTime < 0.05) return;
     anchorRef.current = reanchorPlayback({
@@ -201,12 +198,12 @@ export function CaptionsPanel({
       relayDelayMs: delaySeconds * 1000,
       audioCurrentTimeSeconds: audio.currentTime,
     });
-  }, [chunks, delaySeconds, getAudioElement, mode, sessionId, syncReady]);
+  }, [chunks, delaySeconds, getAudioElement, sessionId, syncReady]);
 
   // Karaoke tick: cheap rAF loop mapping audio.currentTime onto the session
   // axis and updating which word span glows.
   useEffect(() => {
-    if (mode !== 'synced' || !sessionId || paused || !active || !syncReady) {
+    if (!sessionId || paused || !active || !syncReady) {
       setKaraoke(IDLE_KARAOKE);
       return;
     }
@@ -235,20 +232,19 @@ export function CaptionsPanel({
     };
     raf = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(raf);
-  }, [active, chunks, getAudioElement, mode, paused, sessionId, syncReady]);
+  }, [active, chunks, getAudioElement, paused, sessionId, syncReady]);
 
   const wordCount = chunks.reduce((total, chunk) => total + chunk.text.split(/\s+/).filter(Boolean).length, 0);
-  const activeChunkSeq = mode === 'synced' ? karaoke.chunkSeq : null;
-  const activeWordIndex = mode === 'synced' ? karaoke.wordIndex : -1;
+  const activeChunkSeq = karaoke.chunkSeq;
+  const activeWordIndex = karaoke.wordIndex;
 
   const modeFooter = useMemo(() => {
-    if (mode !== 'synced') return 'live captions';
     if (!syncReady) return `synced - buffering ${delaySeconds}s delay (audio stays live meanwhile)`;
     const hasKaraoke = chunks.some((chunk) => Array.isArray(chunk.words) && chunk.words.length > 0);
     return hasKaraoke
       ? `synced - karaoke - audio delayed ${delaySeconds}s`
       : `synced - audio delayed ${delaySeconds}s`;
-  }, [chunks, delaySeconds, mode, syncReady]);
+  }, [chunks, delaySeconds, syncReady]);
 
   return (
     <aside className="captions glass" aria-label="Live captions">
@@ -260,22 +256,6 @@ export function CaptionsPanel({
           </h2>
         </div>
         <div className="captions__controls">
-          <div className="captions__mode" role="group" aria-label="Caption timing mode">
-            <button
-              type="button"
-              className={mode === 'synced' ? 'captions__mode-button captions__mode-button--active' : 'captions__mode-button'}
-              onClick={() => setMode('synced')}
-            >
-              Synced
-            </button>
-            <button
-              type="button"
-              className={mode === 'live' ? 'captions__mode-button captions__mode-button--active' : 'captions__mode-button'}
-              onClick={() => setMode('live')}
-            >
-              Live
-            </button>
-          </div>
           <button type="button" className="icon-button" onClick={onClose} aria-label="Close captions">
             ×
           </button>
@@ -295,14 +275,14 @@ export function CaptionsPanel({
         )}
         {chunks.map((chunk, index) => {
           const isLatest = index === chunks.length - 1;
-          const isPlaying = mode === 'synced' && chunk.seq === activeChunkSeq;
+          const isPlaying = chunk.seq === activeChunkSeq;
           const className =
             `captions__chunk${isLatest ? ' captions__chunk--latest' : ''}` +
             `${isPlaying ? ' captions__chunk--playing' : ''}` +
             `${chunk.text.includes('music') ? ' captions__chunk--music' : ''}`;
           return (
             <p className={className} key={chunk.seq}>
-              {renderChunkBody(chunk, isPlaying, isPlaying ? activeWordIndex : -1, mode)}
+              {renderChunkBody(chunk, isPlaying, isPlaying ? activeWordIndex : -1)}
             </p>
           );
         })}
@@ -323,18 +303,12 @@ export function CaptionsPanel({
   );
 }
 
-function renderChunkBody(
-  chunk: CaptionChunk,
-  isCurrentChunk: boolean,
-  activeWordIndex: number,
-  mode: CaptionMode,
-) {
+function renderChunkBody(chunk: CaptionChunk, isCurrentChunk: boolean, activeWordIndex: number) {
   const words = chunk.words;
-  // In Live mode the words on screen were spoken ~15s ago; a moving highlight
-  // would lie. Same fallback when the provider did not report word timings,
-  // or when this chunk is not the one currently playing — already-spoken
-  // chunks stay as normal text so only the karaoke line moves.
-  if (mode !== 'synced' || !isCurrentChunk || !words || words.length === 0) return chunk.text;
+  // Plain text when the provider did not report word timings, or when this
+  // chunk is not the one currently playing — already-spoken chunks stay as
+  // normal text so only the karaoke line moves.
+  if (!isCurrentChunk || !words || words.length === 0) return chunk.text;
 
   return words.map((word, index) => {
     const state: 'past' | 'current' | 'future' =

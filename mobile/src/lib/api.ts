@@ -39,7 +39,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     response = await fetch(`${apiBaseUrl()}${path}`, {
       ...init,
-      headers: { 'Content-Type': 'application/json', ...init?.headers },
+      // Only claim a JSON body when there is one: Fastify rejects a JSON
+      // content-type with an empty body (400), breaking body-less DELETEs.
+      headers: init?.body ? { 'Content-Type': 'application/json', ...init?.headers } : init?.headers,
     });
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error;

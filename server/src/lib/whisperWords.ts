@@ -152,19 +152,47 @@ function normalizeSeconds(word: FlatWord): { startMs: number; endMs: number } | 
  * (OpenAI verbose_json, whisper.cpp server verbose_json, direct token list).
  * Returns null when no entries had usable timings so the caller can fall
  * back to chunk-level captions.
+ *
+ * whisper.cpp's server labels SUBWORD TOKENS as "words" ("Suscríbete" arrives
+ * as "S", "us", "cr", "íb", "ete"), with a leading space marking genuine word
+ * starts — trimming each entry would shatter words into fragments. When any
+ * entry carries that leading-space marker we run the token merge instead;
+ * OpenAI-style entries (real words, no space prefixes) keep the simple path.
  */
 export function normalizeFlatWords(words: unknown): WordTiming[] | null {
   if (!Array.isArray(words) || words.length === 0) return null;
-  const out: WordTiming[] = [];
+
+  const entries: { raw: string; startMs: number; endMs: number }[] = [];
   for (const raw of words) {
     if (!raw || typeof raw !== 'object') continue;
     const entry = raw as FlatWord;
     const wordText = typeof entry.word === 'string' ? entry.word : '';
-    const trimmed = wordText.trim();
-    if (trimmed.length === 0 || isControlToken(trimmed)) continue;
+    if (wordText.trim().length === 0 || isControlToken(wordText.trim())) continue;
     const times = normalizeSeconds(entry);
     if (!times) continue;
-    out.push({ word: trimmed, startMs: times.startMs, endMs: Math.max(times.startMs, times.endMs) });
+    entries.push({ raw: wordText, startMs: times.startMs, endMs: Math.max(times.startMs, times.endMs) });
   }
+  if (entries.length === 0) return null;
+
+  const tokenStyle = entries.some((entry) => /^\s/.test(entry.raw) && entry.raw.trim().length > 0);
+  if (tokenStyle) {
+    // A trailing space on the previous entry is also a word boundary; encode
+    // it as a leading space so the token merge sees every boundary one way.
+    const merged = mergeWhisperCliTokensToWords([
+      {
+        tokens: entries.map((entry, index) => {
+          const previous = entries[index - 1];
+          const boundary = previous !== undefined && /\s$/.test(previous.raw) && !/^\s/.test(entry.raw);
+          return {
+            text: boundary ? ` ${entry.raw}` : entry.raw,
+            offsets: { from: entry.startMs, to: entry.endMs },
+          };
+        }),
+      },
+    ]);
+    return merged.length > 0 ? merged : null;
+  }
+
+  const out = entries.map((entry) => ({ word: entry.raw.trim(), startMs: entry.startMs, endMs: entry.endMs }));
   return out.length > 0 ? out : null;
 }

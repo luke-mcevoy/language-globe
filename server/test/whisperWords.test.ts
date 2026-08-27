@@ -104,6 +104,31 @@ describe('normalizeFlatWords', () => {
     ]);
   });
 
+  it('merges whisper-server subword tokens labelled as words back into real words', () => {
+    // Verbatim shape from a local whisper-server verbose_json response:
+    // "¡Suscríbete al canal!" arrives as subword tokens with leading spaces
+    // marking true word starts. Trimming each entry produced fragments like
+    // "lleg ando" in the caption UI.
+    expect(
+      normalizeFlatWords([
+        { word: ' ¡', start: 0.06, end: 0.38 },
+        { word: 'S', start: 0.38, end: 0.76 },
+        { word: 'us', start: 0.76, end: 1.52 },
+        { word: 'cr', start: 1.52, end: 2.28 },
+        { word: 'íb', start: 2.28, end: 3.04 },
+        { word: 'ete', start: 3.04, end: 4.18 },
+        { word: ' al', start: 4.18, end: 4.94 },
+        { word: ' canal', start: 4.94, end: 6.84 },
+        { word: '!', start: 6.84, end: 6.9 },
+      ]),
+    ).toEqual([
+      // The lone opening "¡" is dropped (punctuation-only, no word before it).
+      { word: 'Suscríbete', startMs: 380, endMs: 4180 },
+      { word: 'al', startMs: 4180, endMs: 4940 },
+      { word: 'canal!', startMs: 4940, endMs: 6900 },
+    ]);
+  });
+
   it('returns null when nothing is usable so callers can fall back to chunk-level captions', () => {
     expect(normalizeFlatWords(undefined)).toBeNull();
     expect(normalizeFlatWords([])).toBeNull();

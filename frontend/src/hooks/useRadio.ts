@@ -19,6 +19,11 @@ export interface Radio {
   setVolume: (value: number) => void;
   setAudioUrlOverride: (url: string | null) => void;
   toggleMute: () => void;
+  /**
+   * Live handle to the shared audio element so panels can read playback state
+   * (e.g. captions v3 reads currentTime for karaoke highlighting).
+   */
+  getAudioElement: () => HTMLAudioElement | null;
 }
 
 const VOLUME_KEY = 'language-globe:volume';
@@ -174,6 +179,8 @@ export function useRadio(): Radio {
 
   const toggleMute = useCallback(() => setMuted((value) => !value), []);
 
+  const getAudioElement = useCallback(() => audioRef.current, []);
+
   return {
     station,
     status,
@@ -188,5 +195,6 @@ export function useRadio(): Radio {
     setVolume,
     setAudioUrlOverride,
     toggleMute,
+    getAudioElement,
   };
 }

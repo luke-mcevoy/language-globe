@@ -5,13 +5,19 @@ import path from 'node:path';
 import { config } from '../config.js';
 import { captionText } from '../lib/captions.js';
 import { CaptureError, openStreamSource, type StreamSource } from './capture.js';
-import { transcribeAudio } from './providers.js';
-import type { Station } from '../types.js';
+import { transcribeChunk, type TranscribeResult } from './providers.js';
+import type { CaptionWord, Station } from '../types.js';
 
 export interface CaptionResult {
   seq: number;
   text: string;
   capturedAt: string;
+  /** ms since session start when this chunk's audio window began. */
+  startMs: number;
+  /** ms since session start when this chunk's audio window ended. */
+  endMs: number;
+  /** Per-word timings on the session time axis, when the provider reports them. */
+  words?: CaptionWord[];
 }
 
 interface AudioByteChunk {
@@ -41,7 +47,7 @@ interface CaptionSessionOptions {
   maxResults?: number;
   maxAudioBufferMs?: number;
   now?: () => number;
-  transcribe?: (filePath: string) => Promise<string>;
+  transcribe?: (filePath: string) => Promise<TranscribeResult>;
   openSource?: (url: string) => Promise<StreamSource>;
   onError?: (error: unknown) => void;
 }
@@ -57,7 +63,7 @@ export class CaptionSession {
   private readonly maxResults: number;
   private readonly maxAudioBufferMs: number;
   private readonly now: () => number;
-  private readonly transcribe: (filePath: string) => Promise<string>;
+  private readonly transcribe: (filePath: string) => Promise<TranscribeResult>;
   private readonly openSource: (url: string) => Promise<StreamSource>;
   private readonly onError: (error: unknown) => void;
   private results: CaptionResult[] = [];
@@ -68,6 +74,13 @@ export class CaptionSession {
   private source: StreamSource | null = null;
   private stopped = false;
   private error: unknown = null;
+  /**
+   * Wall-clock ms of the first byte that survived the burst-window drop.
+   * All chunk/word timings are reported relative to this so the client has
+   * one continuous timeline that begins near audio.currentTime=0 on the
+   * relayed stream (see PLAN-CAPTIONS-V3.md).
+   */
+  private sessionStartMs: number | null = null;
 
   constructor(
     private readonly station: Station,
@@ -78,7 +91,7 @@ export class CaptionSession {
     this.maxResults = options.maxResults ?? 80;
     this.maxAudioBufferMs = options.maxAudioBufferMs ?? 180_000;
     this.now = options.now ?? Date.now;
-    this.transcribe = options.transcribe ?? transcribeAudio;
+    this.transcribe = options.transcribe ?? transcribeChunk;
     this.openSource = options.openSource ?? openStreamSource;
     this.onError = options.onError ?? (() => undefined);
     this.createdAt = new Date(this.now()).toISOString();
@@ -113,12 +126,39 @@ export class CaptionSession {
     this.lastPollAt = new Date(this.now()).toISOString();
   }
 
-  appendResult(text: string, capturedAt = new Date(this.now()).toISOString()): CaptionResult {
-    const result = { seq: this.nextSeq++, text, capturedAt };
+  appendResult(
+    input:
+      | string
+      | {
+          text: string;
+          startMs?: number;
+          endMs?: number;
+          words?: CaptionWord[];
+          capturedAt?: string;
+        },
+    capturedAt = new Date(this.now()).toISOString(),
+  ): CaptionResult {
+    const payload =
+      typeof input === 'string'
+        ? { text: input, startMs: this.sessionOffsetMs(this.now()), endMs: this.sessionOffsetMs(this.now()) }
+        : input;
+    const result: CaptionResult = {
+      seq: this.nextSeq++,
+      text: payload.text,
+      capturedAt: payload.capturedAt ?? capturedAt,
+      startMs: payload.startMs ?? this.sessionOffsetMs(this.now()),
+      endMs: payload.endMs ?? this.sessionOffsetMs(this.now()),
+      ...(payload.words && payload.words.length > 0 ? { words: payload.words } : {}),
+    };
     this.results.push(result);
     if (this.results.length > this.maxResults) this.results = this.results.slice(-this.maxResults);
     this.flushResultWaiters();
     return result;
+  }
+
+  private sessionOffsetMs(wallMs: number): number {
+    if (this.sessionStartMs === null) return 0;
+    return Math.max(0, wallMs - this.sessionStartMs);
   }
 
   poll(after: number, timeoutMs: number): Promise<CaptionResult[]> {
@@ -191,6 +231,8 @@ export class CaptionSession {
       const closingHandle = handle;
       const closingPath = filePath;
       const closingBytes = bytesInWindow;
+      const closingWindowStart = windowStart;
+      const closingWindowEnd = this.now();
       handle = null;
       filePath = null;
       bytesInWindow = 0;
@@ -207,8 +249,27 @@ export class CaptionSession {
         return;
       }
 
+      // Freeze the session-axis window bounds NOW, before spawning transcription:
+      // sessionStartMs is guaranteed to be set here (a byte flowed since burst)
+      // so word timings that come back are anchored to the correct window.
+      const startMs = this.sessionOffsetMs(closingWindowStart);
+      const endMs = this.sessionOffsetMs(closingWindowEnd);
+
       void this.transcribe(closingPath)
-        .then((transcript) => this.appendResult(captionText(transcript), new Date(this.now()).toISOString()))
+        .then((result) => {
+          const words = result.words?.map((word) => ({
+            word: word.word,
+            startMs: startMs + word.startMs,
+            endMs: startMs + word.endMs,
+          }));
+          this.appendResult({
+            text: captionText(result.text),
+            startMs,
+            endMs,
+            words,
+            capturedAt: new Date(this.now()).toISOString(),
+          });
+        })
         .catch((error) => this.onError(error))
         .finally(() => void fsp.rm(closingPath, { force: true }).catch(() => undefined));
     };
@@ -252,6 +313,10 @@ export class CaptionSession {
 
   private pushAudio(data: Uint8Array): void {
     const receivedAt = this.now();
+    // The relay begins yielding here, so anchor the session timeline on the
+    // first surviving byte. audio.currentTime=0 on the client then lines up
+    // with session-offset 0, and chunk/word timings sit on the same axis.
+    if (this.sessionStartMs === null) this.sessionStartMs = receivedAt;
     this.audioBytes.push({ data, receivedAt });
     const oldest = receivedAt - this.maxAudioBufferMs;
     while (this.audioBytes.length > 0 && (this.audioBytes[0]?.receivedAt ?? receivedAt) < oldest) this.audioBytes.shift();

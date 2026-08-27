@@ -685,6 +685,24 @@ code {
   border-left: 2px solid var(--accent);
 }
 
+.captions__word {
+  transition: color 120ms ease, text-shadow 120ms ease;
+}
+
+.captions__word--past {
+  color: var(--ink-secondary);
+}
+
+.captions__word--current {
+  color: var(--accent);
+  text-shadow: 0 0 12px rgba(84, 230, 195, 0.55);
+  font-weight: 700;
+}
+
+.captions__word--future {
+  color: var(--ink-muted);
+}
+
 .captions__chunk--music {
   color: var(--ink-muted);
   font-style: italic;

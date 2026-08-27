@@ -84,10 +84,28 @@ export interface QuizSubmitResponse {
   transcript: string;
 }
 
+export interface CaptionWord {
+  word: string;
+  /** ms since session start when this word starts (session time axis). */
+  startMs: number;
+  /** ms since session start when this word ends. */
+  endMs: number;
+}
+
 export interface CaptionChunk {
   seq: number;
   text: string;
   capturedAt: string;
+  /** ms since session start when this chunk's window began. */
+  startMs: number;
+  /** ms since session start when this chunk's window ended. */
+  endMs: number;
+  /**
+   * Per-word timings on the SESSION time axis. Omitted when the transcription
+   * provider does not report word-level detail — the client then falls back to
+   * chunk-level highlighting.
+   */
+  words?: CaptionWord[];
 }
 
 export interface CaptionSessionCreatedResponse {

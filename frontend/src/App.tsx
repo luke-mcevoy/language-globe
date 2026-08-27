@@ -218,6 +218,7 @@ export function App() {
           chunkSeconds={health?.captionChunkSeconds ?? 15}
           onClose={() => setCaptionsOpen(false)}
           onAudioUrlChange={radio.setAudioUrlOverride}
+          getAudioElement={radio.getAudioElement}
         />
       )}
 

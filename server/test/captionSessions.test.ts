@@ -81,7 +81,7 @@ describe('CaptionSessionStore', () => {
         body: new ReadableStream<Uint8Array>({ start: () => undefined }),
         cleanup: async () => undefined,
       }));
-    const store = new CaptionSessionStore({ maxSessions: 2, openSource, transcribe: async () => '' });
+    const store = new CaptionSessionStore({ maxSessions: 2, openSource, transcribe: async () => ({ text: '' }) });
 
     const [first, second] = await Promise.all([store.create(station), store.create(station)]);
     expect(store.size).toBe(1);

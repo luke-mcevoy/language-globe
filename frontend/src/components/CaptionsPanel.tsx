@@ -6,6 +6,14 @@ import {
   startCaptionSession,
   stopCaptionSession,
 } from '../api';
+import {
+  findActiveChunk,
+  findActiveWordIndex,
+  initialPlaybackAnchor,
+  reanchorPlayback,
+  sessionTimeAt,
+  type PlaybackAnchor,
+} from '../lib/captionSync';
 import type { CaptionChunk, Station } from '../types';
 
 type CaptionMode = 'synced' | 'live';
@@ -18,12 +26,21 @@ interface CaptionsPanelProps {
   chunkSeconds: number;
   onClose: () => void;
   onAudioUrlChange: (url: string | null) => void;
+  getAudioElement: () => HTMLAudioElement | null;
 }
+
+interface KaraokeState {
+  chunkSeq: number | null;
+  wordIndex: number;
+}
+
+const IDLE_KARAOKE: KaraokeState = { chunkSeq: null, wordIndex: -1 };
 
 export function CaptionsPanel({
   active,
   chunkSeconds,
   enabled,
+  getAudioElement,
   onAudioUrlChange,
   onClose,
   paused,
@@ -34,14 +51,20 @@ export function CaptionsPanel({
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<CaptionMode>('synced');
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [karaoke, setKaraoke] = useState<KaraokeState>(IDLE_KARAOKE);
   const feedRef = useRef<HTMLDivElement | null>(null);
   const pinnedRef = useRef(true);
+  const anchorRef = useRef<PlaybackAnchor>(initialPlaybackAnchor());
+  const sessionEpochRef = useRef<number | null>(null);
   const delaySeconds = chunkSeconds + 5;
 
   useEffect(() => {
     setChunks([]);
     setError(null);
     setSessionId(null);
+    setKaraoke(IDLE_KARAOKE);
+    anchorRef.current = initialPlaybackAnchor();
+    sessionEpochRef.current = null;
     pinnedRef.current = true;
   }, [station.id]);
 
@@ -59,6 +82,8 @@ export function CaptionsPanel({
     if (!active || !enabled || paused) {
       setPending(false);
       setSessionId(null);
+      setKaraoke(IDLE_KARAOKE);
+      sessionEpochRef.current = null;
       onAudioUrlChange(null);
       return;
     }
@@ -80,6 +105,8 @@ export function CaptionsPanel({
           return;
         }
         setSessionId(created.sessionId);
+        sessionEpochRef.current = performance.now();
+        anchorRef.current = initialPlaybackAnchor();
         setError(null);
 
         let after = 0;
@@ -119,8 +146,65 @@ export function CaptionsPanel({
     return () => onAudioUrlChange(null);
   }, [active, delaySeconds, mode, onAudioUrlChange, paused, sessionId]);
 
+  // Re-anchor on every arriving chunk: MP3 currentTime drift over minutes
+  // would otherwise walk the highlight away from the audible word.
+  useEffect(() => {
+    if (mode !== 'synced' || !sessionId || sessionEpochRef.current === null) return;
+    const audio = getAudioElement();
+    if (!audio || audio.currentTime < 0.05) return;
+    anchorRef.current = reanchorPlayback({
+      clientNowMs: performance.now(),
+      sessionEpochMs: sessionEpochRef.current,
+      relayDelayMs: delaySeconds * 1000,
+      audioCurrentTimeSeconds: audio.currentTime,
+    });
+  }, [chunks, delaySeconds, getAudioElement, mode, sessionId]);
+
+  // Karaoke tick: cheap rAF loop mapping audio.currentTime onto the session
+  // axis and updating which word span glows.
+  useEffect(() => {
+    if (mode !== 'synced' || !sessionId || paused || !active) {
+      setKaraoke(IDLE_KARAOKE);
+      return;
+    }
+    let raf = 0;
+    const tick = () => {
+      const audio = getAudioElement();
+      if (audio && !audio.paused && audio.currentTime > 0) {
+        const sessionMs = sessionTimeAt(anchorRef.current, audio.currentTime);
+        const chunk = findActiveChunk(chunks, sessionMs);
+        if (chunk?.words && chunk.words.length > 0) {
+          const idx = findActiveWordIndex(chunk.words, sessionMs);
+          setKaraoke((previous) =>
+            previous.chunkSeq === chunk.seq && previous.wordIndex === idx
+              ? previous
+              : { chunkSeq: chunk.seq, wordIndex: idx },
+          );
+        } else if (chunk) {
+          setKaraoke((previous) =>
+            previous.chunkSeq === chunk.seq && previous.wordIndex === -1 ? previous : { chunkSeq: chunk.seq, wordIndex: -1 },
+          );
+        } else {
+          setKaraoke((previous) => (previous.chunkSeq === null && previous.wordIndex === -1 ? previous : IDLE_KARAOKE));
+        }
+      }
+      raf = window.requestAnimationFrame(tick);
+    };
+    raf = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(raf);
+  }, [active, chunks, getAudioElement, mode, paused, sessionId]);
+
   const wordCount = chunks.reduce((total, chunk) => total + chunk.text.split(/\s+/).filter(Boolean).length, 0);
-  const playingSeq = useMemo(() => (mode === 'synced' ? chunks[chunks.length - 1]?.seq : null), [chunks, mode]);
+  const activeChunkSeq = mode === 'synced' ? karaoke.chunkSeq : null;
+  const activeWordIndex = mode === 'synced' ? karaoke.wordIndex : -1;
+
+  const modeFooter = useMemo(() => {
+    if (mode !== 'synced') return 'live captions';
+    const hasKaraoke = chunks.some((chunk) => Array.isArray(chunk.words) && chunk.words.length > 0);
+    return hasKaraoke
+      ? `synced - karaoke - audio delayed ${delaySeconds}s`
+      : `synced - audio delayed ${delaySeconds}s`;
+  }, [chunks, delaySeconds, mode]);
 
   return (
     <aside className="captions glass" aria-label="Live captions">
@@ -165,16 +249,19 @@ export function CaptionsPanel({
         {chunks.length === 0 && !pending && !paused && !error && (
           <p className="captions__empty">Waiting for the next spoken chunk...</p>
         )}
-        {chunks.map((chunk, index) => (
-          <p
-            className={`captions__chunk${index === chunks.length - 1 ? ' captions__chunk--latest' : ''}${
-              chunk.seq === playingSeq ? ' captions__chunk--playing' : ''
-            }${chunk.text.includes('music') ? ' captions__chunk--music' : ''}`}
-            key={chunk.seq}
-          >
-            {chunk.text}
-          </p>
-        ))}
+        {chunks.map((chunk, index) => {
+          const isLatest = index === chunks.length - 1;
+          const isPlaying = mode === 'synced' && chunk.seq === activeChunkSeq;
+          const className =
+            `captions__chunk${isLatest ? ' captions__chunk--latest' : ''}` +
+            `${isPlaying ? ' captions__chunk--playing' : ''}` +
+            `${chunk.text.includes('music') ? ' captions__chunk--music' : ''}`;
+          return (
+            <p className={className} key={chunk.seq}>
+              {renderChunkBody(chunk, isPlaying, isPlaying ? activeWordIndex : -1, mode)}
+            </p>
+          );
+        })}
         {paused && <p className="captions__paused">Paused while the quiz captures this station.</p>}
         {error && <p className="captions__error">{error}</p>}
         {pending && (
@@ -186,8 +273,33 @@ export function CaptionsPanel({
 
       <footer className="captions__footer">
         <span>{wordCount} words</span>
-        <span>{mode === 'synced' ? `synced - audio delayed ${delaySeconds}s` : 'live captions'}</span>
+        <span>{modeFooter}</span>
       </footer>
     </aside>
   );
+}
+
+function renderChunkBody(
+  chunk: CaptionChunk,
+  isCurrentChunk: boolean,
+  activeWordIndex: number,
+  mode: CaptionMode,
+) {
+  const words = chunk.words;
+  // In Live mode the words on screen were spoken ~15s ago; a moving highlight
+  // would lie. Same fallback when the provider did not report word timings,
+  // or when this chunk is not the one currently playing — already-spoken
+  // chunks stay as normal text so only the karaoke line moves.
+  if (mode !== 'synced' || !isCurrentChunk || !words || words.length === 0) return chunk.text;
+
+  return words.map((word, index) => {
+    const state: 'past' | 'current' | 'future' =
+      index < activeWordIndex ? 'past' : index === activeWordIndex ? 'current' : 'future';
+    return (
+      <span key={index} className={`captions__word captions__word--${state}`}>
+        {word.word}
+        {index < words.length - 1 ? ' ' : ''}
+      </span>
+    );
+  });
 }

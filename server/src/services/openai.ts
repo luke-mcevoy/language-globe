@@ -3,7 +3,17 @@ import OpenAI from 'openai';
 import { config, targetLanguageCode } from '../config.js';
 import { parseGeneratedQuestions } from '../lib/grading.js';
 import { cleanTranscript } from '../lib/text.js';
+import { normalizeFlatWords } from '../lib/whisperWords.js';
 import type { Difficulty, QuizQuestion } from '../types.js';
+
+export interface TranscribeResult {
+  text: string;
+  /**
+   * Word-level timings relative to the START of this clip, in ms. Only set
+   * when the provider actually returned per-word timestamps.
+   */
+  words?: Array<{ word: string; startMs: number; endMs: number }>;
+}
 
 let client: OpenAI | null = null;
 
@@ -43,17 +53,28 @@ export function describeOpenAiError(error: unknown): { code: string; message: st
 }
 
 export async function transcribe(filePath: string, language = config.targetLanguage): Promise<string> {
+  return (await transcribeVerbose(filePath, language)).text;
+}
+
+export async function transcribeVerbose(
+  filePath: string,
+  language = config.targetLanguage,
+): Promise<TranscribeResult> {
   const code = targetLanguageCode(language);
   const response = await getClient().audio.transcriptions.create({
     file: fs.createReadStream(filePath),
     model: config.transcribeModel,
+    response_format: 'verbose_json',
+    // Word-level timings are only returned for whisper-1 with this flag.
+    timestamp_granularities: ['word'],
     ...(code ? { language: code } : {}),
     // Nudges the model toward broadcast speech rather than song lyrics.
     prompt: 'Live radio broadcast. Transcribe the speech only.',
   });
 
   const text = typeof response === 'string' ? response : (response.text ?? '');
-  return cleanTranscript(text);
+  const words = typeof response === 'string' ? null : normalizeFlatWords(response.words);
+  return { text: cleanTranscript(text), words: words ?? undefined };
 }
 
 export const QUESTION_SCHEMA = {

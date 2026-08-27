@@ -72,10 +72,19 @@ export interface QuizSubmitResponse {
   transcript: string;
 }
 
+export interface CaptionWord {
+  word: string;
+  startMs: number;
+  endMs: number;
+}
+
 export interface CaptionChunk {
   seq: number;
   text: string;
   capturedAt: string;
+  startMs: number;
+  endMs: number;
+  words?: CaptionWord[];
 }
 
 export interface CaptionSessionCreatedResponse {

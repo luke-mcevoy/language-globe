@@ -6,13 +6,22 @@ import { randomUUID } from 'node:crypto';
 import { config, targetLanguageCode } from '../config.js';
 import { parseGeneratedQuestions } from '../lib/grading.js';
 import { cleanTranscript } from '../lib/text.js';
+import {
+  mergeWhisperCliTokensToWords,
+  normalizeFlatWords,
+  type WhisperCliSegment,
+  type WordTiming,
+} from '../lib/whisperWords.js';
 import type { Difficulty, QuizQuestion } from '../types.js';
 import {
   buildQuizPrompt,
   generateQuestions as generateOpenAiQuestions,
   QUESTION_SCHEMA,
-  transcribe as transcribeOpenAi,
+  transcribeVerbose as transcribeVerboseOpenAi,
+  type TranscribeResult,
 } from './openai.js';
+
+export type { TranscribeResult } from './openai.js';
 
 export type TranscribeProvider = 'local-whisper' | 'openai' | 'unavailable';
 export type QuizProvider = 'ollama' | 'openai' | 'unavailable';
@@ -216,11 +225,47 @@ async function ensureWhisperServer(): Promise<void> {
   return whisperServerReady;
 }
 
-async function transcribeWithWhisperServer(wavPath: string): Promise<string> {
+interface WhisperServerVerboseResponse {
+  text?: unknown;
+  words?: unknown;
+  segments?: Array<{
+    text?: unknown;
+    words?: unknown;
+    tokens?: WhisperCliSegment['tokens'];
+    offsets?: WhisperCliSegment['offsets'];
+  }>;
+}
+
+function extractWordsFromWhisperServer(payload: WhisperServerVerboseResponse): WordTiming[] | null {
+  // Newer whisper.cpp server builds expose an OpenAI-shape `words` array.
+  const top = normalizeFlatWords(payload.words);
+  if (top) return top;
+
+  // Older builds put words inside each segment.
+  if (Array.isArray(payload.segments)) {
+    const flat = payload.segments.flatMap((segment) => (Array.isArray(segment?.words) ? segment.words : []));
+    const nested = normalizeFlatWords(flat);
+    if (nested) return nested;
+
+    // Fall back to per-segment tokens (present when verbose_json exposes them).
+    const segments: WhisperCliSegment[] = payload.segments.map((segment) => ({
+      text: segment?.text,
+      offsets: segment?.offsets ?? null,
+      tokens: Array.isArray(segment?.tokens) ? segment.tokens : null,
+    }));
+    const merged = mergeWhisperCliTokensToWords(segments);
+    if (merged.length > 0) return merged;
+  }
+  return null;
+}
+
+async function transcribeWithWhisperServer(wavPath: string): Promise<TranscribeResult> {
   await ensureWhisperServer();
   const form = new FormData();
   form.append('file', new Blob([await fsp.readFile(wavPath)], { type: 'audio/wav' }), path.basename(wavPath));
-  form.append('response_format', 'json');
+  // verbose_json gives us word/token detail when the server build supports it,
+  // and still contains `text` when it does not — so we never lose the caption.
+  form.append('response_format', 'verbose_json');
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60_000);
@@ -231,23 +276,34 @@ async function transcribeWithWhisperServer(wavPath: string): Promise<string> {
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`whisper-server responded ${response.status}`);
-    const payload = (await response.json()) as { text?: unknown };
-    return cleanTranscript(typeof payload.text === 'string' ? payload.text : '');
+    const payload = (await response.json()) as WhisperServerVerboseResponse;
+    const text = cleanTranscript(typeof payload.text === 'string' ? payload.text : '');
+    const words = extractWordsFromWhisperServer(payload);
+    return { text, words: words ?? undefined };
   } finally {
     clearTimeout(timeout);
   }
 }
 
-async function transcribeWithWhisperCli(wavPath: string): Promise<string> {
+interface WhisperCliJson {
+  transcription?: WhisperCliSegment[];
+}
+
+async function transcribeWithWhisperCli(wavPath: string): Promise<TranscribeResult> {
   const language = targetLanguageCode(config.targetLanguage) ?? config.targetLanguage;
-  const args = ['-m', config.whisperModelPath, '-l', language, '-np', '-nt', '-f', wavPath];
-  const output = await new Promise<string>((resolve, reject) => {
+  const outputBase = wavPath.replace(/\.wav$/i, `-${randomUUID()}`);
+  const jsonPath = `${outputBase}.json`;
+  // -ojf writes a JSON file with per-token timings; -of picks the output base
+  // name (whisper-cli appends `.json`).
+  const args = ['-m', config.whisperModelPath, '-l', language, '-np', '-nt', '-ojf', '-of', outputBase, '-f', wavPath];
+
+  const stdout = await new Promise<string>((resolve, reject) => {
     const child = spawn(config.whisperCliBin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-    let stdout = '';
+    let out = '';
     let stderr = '';
     const killTimer = setTimeout(() => child.kill('SIGKILL'), 60_000);
     child.stdout?.on('data', (data: Buffer) => {
-      stdout += data.toString();
+      out += data.toString();
     });
     child.stderr?.on('data', (data: Buffer) => {
       stderr += data.toString();
@@ -258,14 +314,36 @@ async function transcribeWithWhisperCli(wavPath: string): Promise<string> {
     });
     child.on('close', (code) => {
       clearTimeout(killTimer);
-      if (code === 0) resolve(stdout);
+      if (code === 0) resolve(out);
       else reject(new Error(`whisper-cli exited ${code}: ${stderr.slice(0, 400)}`));
     });
   });
-  return cleanTranscript(output);
+
+  let jsonRaw: string | null = null;
+  try {
+    jsonRaw = await fsp.readFile(jsonPath, 'utf8');
+  } catch {
+    // No JSON output — return the stdout text (still a valid caption).
+    return { text: cleanTranscript(stdout) };
+  } finally {
+    await fsp.rm(jsonPath, { force: true }).catch(() => undefined);
+  }
+
+  let parsed: WhisperCliJson;
+  try {
+    parsed = JSON.parse(jsonRaw) as WhisperCliJson;
+  } catch {
+    return { text: cleanTranscript(stdout) };
+  }
+  const segments = Array.isArray(parsed.transcription) ? parsed.transcription : [];
+  const text = segments
+    .map((segment) => (typeof segment.text === 'string' ? segment.text : ''))
+    .join(' ');
+  const words = mergeWhisperCliTokensToWords(segments);
+  return { text: cleanTranscript(text.length > 0 ? text : stdout), words: words.length > 0 ? words : undefined };
 }
 
-async function transcribeLocal(filePath: string): Promise<string> {
+async function transcribeLocal(filePath: string): Promise<TranscribeResult> {
   const wav = await convertToWhisperWav(filePath);
   try {
     if (providerState.whisperServerAvailable) return await transcribeWithWhisperServer(wav.filePath);
@@ -275,7 +353,7 @@ async function transcribeLocal(filePath: string): Promise<string> {
   }
 }
 
-export async function transcribeAudio(filePath: string): Promise<string> {
+export async function transcribeChunk(filePath: string): Promise<TranscribeResult> {
   const primary = providerState.transcribeProvider;
   if (primary === 'local-whisper') {
     try {
@@ -284,8 +362,12 @@ export async function transcribeAudio(filePath: string): Promise<string> {
       if (!providerState.openaiAvailable) throw error;
     }
   }
-  if (providerState.openaiAvailable) return transcribeOpenAi(filePath);
+  if (providerState.openaiAvailable) return transcribeVerboseOpenAi(filePath);
   throw new Error('No transcription provider is available.');
+}
+
+export async function transcribeAudio(filePath: string): Promise<string> {
+  return (await transcribeChunk(filePath)).text;
 }
 
 export async function generateOllamaQuestions(

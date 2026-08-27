@@ -52,6 +52,13 @@ export function CaptionsPanel({
   const [mode, setMode] = useState<CaptionMode>('synced');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [karaoke, setKaraoke] = useState<KaraokeState>(IDLE_KARAOKE);
+  // The sync relay can only serve audio once it has buffered `delaySeconds`
+  // worth of stream. Pointing the player at it earlier starves the <audio>
+  // element and the whole station errors out, so we keep playing the direct
+  // stream and only switch when the server reports enough buffer.
+  const [syncReady, setSyncReady] = useState(false);
+  const [bufferVersion, setBufferVersion] = useState(0);
+  const bufferRef = useRef<{ bufferedMs: number; atMs: number } | null>(null);
   const feedRef = useRef<HTMLDivElement | null>(null);
   const pinnedRef = useRef(true);
   const anchorRef = useRef<PlaybackAnchor>(initialPlaybackAnchor());
@@ -63,6 +70,8 @@ export function CaptionsPanel({
     setError(null);
     setSessionId(null);
     setKaraoke(IDLE_KARAOKE);
+    setSyncReady(false);
+    bufferRef.current = null;
     anchorRef.current = initialPlaybackAnchor();
     sessionEpochRef.current = null;
     pinnedRef.current = true;
@@ -107,6 +116,8 @@ export function CaptionsPanel({
           return;
         }
         setSessionId(created.sessionId);
+        setSyncReady(false);
+        bufferRef.current = null;
         sessionEpochRef.current = performance.now();
         anchorRef.current = initialPlaybackAnchor();
         setError(null);
@@ -116,6 +127,14 @@ export function CaptionsPanel({
           controller = new AbortController();
           const response = await pollCaptionSession(created.sessionId, after, controller.signal);
           if (cancelled) return;
+          if (typeof response.audioBufferedMs === 'number') {
+            bufferRef.current = { bufferedMs: response.audioBufferedMs, atMs: performance.now() };
+            // True session-axis zero is the first buffered byte (after the
+            // burst discard), not the create response — correct the epoch so
+            // karaoke wall-clock re-anchoring sits on the right axis.
+            sessionEpochRef.current = performance.now() - response.audioBufferedMs;
+            setBufferVersion((version) => version + 1);
+          }
           if (response.chunks.length > 0) {
             after = response.chunks[response.chunks.length - 1]?.seq ?? after;
             setError(null);
@@ -139,19 +158,36 @@ export function CaptionsPanel({
     };
   }, [active, enabled, onAudioUrlChange, paused, station.id]);
 
+  // Flip syncReady once the relay buffer covers the delay (extrapolating
+  // between polls, since long-polls can be 25s apart).
   useEffect(() => {
-    if (!sessionId || mode !== 'synced' || paused || !active) {
+    if (syncReady || !sessionId) return;
+    const buffer = bufferRef.current;
+    if (!buffer) return;
+    const marginMs = 1_500;
+    const bufferedNow = buffer.bufferedMs + (performance.now() - buffer.atMs);
+    const remainingMs = delaySeconds * 1000 + marginMs - bufferedNow;
+    if (remainingMs <= 0) {
+      setSyncReady(true);
+      return;
+    }
+    const timer = window.setTimeout(() => setSyncReady(true), remainingMs);
+    return () => window.clearTimeout(timer);
+  }, [bufferVersion, delaySeconds, sessionId, syncReady]);
+
+  useEffect(() => {
+    if (!sessionId || mode !== 'synced' || paused || !active || !syncReady) {
       onAudioUrlChange(null);
       return;
     }
     onAudioUrlChange(captionSessionAudioUrl(sessionId, delaySeconds));
     return () => onAudioUrlChange(null);
-  }, [active, delaySeconds, mode, onAudioUrlChange, paused, sessionId]);
+  }, [active, delaySeconds, mode, onAudioUrlChange, paused, sessionId, syncReady]);
 
   // Re-anchor on every arriving chunk: MP3 currentTime drift over minutes
   // would otherwise walk the highlight away from the audible word.
   useEffect(() => {
-    if (mode !== 'synced' || !sessionId || sessionEpochRef.current === null) return;
+    if (mode !== 'synced' || !sessionId || !syncReady || sessionEpochRef.current === null) return;
     const audio = getAudioElement();
     if (!audio || audio.currentTime < 0.05) return;
     anchorRef.current = reanchorPlayback({
@@ -160,12 +196,12 @@ export function CaptionsPanel({
       relayDelayMs: delaySeconds * 1000,
       audioCurrentTimeSeconds: audio.currentTime,
     });
-  }, [chunks, delaySeconds, getAudioElement, mode, sessionId]);
+  }, [chunks, delaySeconds, getAudioElement, mode, sessionId, syncReady]);
 
   // Karaoke tick: cheap rAF loop mapping audio.currentTime onto the session
   // axis and updating which word span glows.
   useEffect(() => {
-    if (mode !== 'synced' || !sessionId || paused || !active) {
+    if (mode !== 'synced' || !sessionId || paused || !active || !syncReady) {
       setKaraoke(IDLE_KARAOKE);
       return;
     }
@@ -194,7 +230,7 @@ export function CaptionsPanel({
     };
     raf = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(raf);
-  }, [active, chunks, getAudioElement, mode, paused, sessionId]);
+  }, [active, chunks, getAudioElement, mode, paused, sessionId, syncReady]);
 
   const wordCount = chunks.reduce((total, chunk) => total + chunk.text.split(/\s+/).filter(Boolean).length, 0);
   const activeChunkSeq = mode === 'synced' ? karaoke.chunkSeq : null;
@@ -202,11 +238,12 @@ export function CaptionsPanel({
 
   const modeFooter = useMemo(() => {
     if (mode !== 'synced') return 'live captions';
+    if (!syncReady) return `synced - buffering ${delaySeconds}s delay (audio stays live meanwhile)`;
     const hasKaraoke = chunks.some((chunk) => Array.isArray(chunk.words) && chunk.words.length > 0);
     return hasKaraoke
       ? `synced - karaoke - audio delayed ${delaySeconds}s`
       : `synced - audio delayed ${delaySeconds}s`;
-  }, [chunks, delaySeconds, mode]);
+  }, [chunks, delaySeconds, mode, syncReady]);
 
   return (
     <aside className="captions glass" aria-label="Live captions">

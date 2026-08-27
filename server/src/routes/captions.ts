@@ -62,7 +62,11 @@ export async function registerCaptionRoutes(app: FastifyInstance): Promise<void>
       try {
         const chunks = await captionSessions.poll(request.params.id, parseAfter(request.query.after));
         if (!chunks) return reply.status(404).send({ error: 'unknown_session', message: 'Caption session expired.' });
-        const response: CaptionPollResponse = { chunks };
+        const session = captionSessions.get(request.params.id);
+        const response: CaptionPollResponse = {
+          chunks,
+          audioBufferedMs: session?.audioBufferedMs() ?? null,
+        };
         return response;
       } catch (error) {
         request.log.error({ err: error, sessionId: request.params.id }, 'caption polling failed');

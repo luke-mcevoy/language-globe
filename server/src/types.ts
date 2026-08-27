@@ -116,6 +116,8 @@ export interface CaptionSessionCreatedResponse {
 
 export interface CaptionPollResponse {
   chunks: CaptionChunk[];
+  /** Post-burst audio the sync relay has buffered; null until the first byte lands. */
+  audioBufferedMs?: number | null;
 }
 
 export interface DailyAccuracy {

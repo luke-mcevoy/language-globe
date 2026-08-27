@@ -191,6 +191,11 @@ export class CaptionSession {
     });
   }
 
+  /** How much post-burst audio the relay has buffered; null until the first byte lands. */
+  audioBufferedMs(): number | null {
+    return this.sessionStartMs === null ? null : this.now() - this.sessionStartMs;
+  }
+
   async *audioRelay(delaySeconds: number): AsyncGenerator<Uint8Array> {
     this.touch();
     const delayMs = Math.max(0, delaySeconds * 1000);

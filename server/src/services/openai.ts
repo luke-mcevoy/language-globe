@@ -13,6 +13,35 @@ function getClient(): OpenAI {
   return client;
 }
 
+/**
+ * Billing and auth failures are account problems the user can actually fix;
+ * surfacing them as generic "try again" errors sends them down the wrong
+ * path (retrying, blaming the station).
+ */
+export function describeOpenAiError(error: unknown): { code: string; message: string } | null {
+  if (!(error instanceof OpenAI.APIError)) return null;
+  if (error.status === 429 && /quota|billing/i.test(error.message)) {
+    return {
+      code: 'openai_quota',
+      message:
+        'Your OpenAI account is out of API credits. Add credits at platform.openai.com (Settings → Billing) — API usage is billed separately from ChatGPT.',
+    };
+  }
+  if (error.status === 401) {
+    return {
+      code: 'openai_auth',
+      message: 'OpenAI rejected the API key. Check OPENAI_API_KEY in server/.env and restart the server.',
+    };
+  }
+  if (error.status === 429) {
+    return {
+      code: 'openai_rate_limit',
+      message: 'OpenAI is rate-limiting requests right now. Wait a moment and try again.',
+    };
+  }
+  return null;
+}
+
 export async function transcribe(filePath: string, language = config.targetLanguage): Promise<string> {
   const code = targetLanguageCode(language);
   const response = await getClient().audio.transcriptions.create({

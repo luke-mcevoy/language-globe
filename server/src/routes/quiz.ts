@@ -5,7 +5,7 @@ import { getQuiz, insertQuiz, recordResult } from '../db.js';
 import { gradeQuiz } from '../lib/grading.js';
 import { countWords } from '../lib/text.js';
 import { CaptureError, captureStream } from '../services/capture.js';
-import { generateQuestions, transcribe } from '../services/openai.js';
+import { describeOpenAiError, generateQuestions, transcribe } from '../services/openai.js';
 import { getStations, suggestTalkStation } from '../services/stations.js';
 import type { Difficulty, QuizQuestion, QuizStartResponse, QuizSubmitResponse } from '../types.js';
 
@@ -55,6 +55,8 @@ export async function registerQuizRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(502).send({ error: error.code, message: error.message });
       }
       request.log.error({ err: error, stationId }, 'transcription failed');
+      const known = describeOpenAiError(error);
+      if (known) return reply.status(502).send({ error: known.code, message: known.message });
       return reply.status(502).send({
         error: 'transcription_failed',
         message: 'Could not transcribe this clip. Try again, or try another station.',
@@ -77,6 +79,8 @@ export async function registerQuizRoutes(app: FastifyInstance): Promise<void> {
       questions = await generateQuestions(transcript, difficulty);
     } catch (error) {
       request.log.error({ err: error, stationId }, 'question generation failed');
+      const known = describeOpenAiError(error);
+      if (known) return reply.status(502).send({ error: known.code, message: known.message });
       return reply.status(502).send({
         error: 'generation_failed',
         message: 'The quiz model could not turn that clip into questions. Try again.',

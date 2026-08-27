@@ -7,6 +7,7 @@ interface PlayerBarProps {
   radio: Radio;
   captionsEnabled: boolean;
   captionsOpen: boolean;
+  quizEnabled: boolean;
   quizOpen: boolean;
   onCaptions: () => void;
   onQuiz: () => void;
@@ -20,7 +21,7 @@ const STATUS_LABEL: Record<string, string> = {
   error: 'Stream failed',
 };
 
-export function PlayerBar({ captionsEnabled, captionsOpen, onCaptions, onQuiz, quizOpen, radio }: PlayerBarProps) {
+export function PlayerBar({ captionsEnabled, captionsOpen, onCaptions, onQuiz, quizEnabled, quizOpen, radio }: PlayerBarProps) {
   const now = useClock();
   const { station, status } = radio;
 
@@ -90,10 +91,11 @@ export function PlayerBar({ captionsEnabled, captionsOpen, onCaptions, onQuiz, q
           <Text style={[styles.ccText, captionsOpen && styles.ccTextActive]}>CC</Text>
         </Pressable>
         <Pressable
-          style={[styles.quizButton, quizOpen && styles.disabled]}
+          style={[styles.quizButton, (!quizEnabled || quizOpen) && styles.disabled]}
           onPress={onQuiz}
-          disabled={quizOpen}
+          disabled={!quizEnabled || quizOpen}
           accessibilityRole="button"
+          accessibilityState={{ disabled: !quizEnabled || quizOpen }}
         >
           <Text style={styles.quizText}>Quiz</Text>
         </Pressable>

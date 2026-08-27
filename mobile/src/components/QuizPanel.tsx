@@ -168,8 +168,8 @@ export function QuizPanel({
 function DisabledState() {
   return (
     <Center
-      title="Quizzes need an API key"
-      detail="Add OPENAI_API_KEY to server/.env and restart the server. Radio and progress still work without it."
+      title="Quizzes need a model provider"
+      detail="Start local Whisper and Ollama, or add OPENAI_API_KEY to server/.env and restart the server. Radio and progress still work without them."
     />
   );
 }

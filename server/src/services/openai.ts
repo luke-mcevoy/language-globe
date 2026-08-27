@@ -56,7 +56,7 @@ export async function transcribe(filePath: string, language = config.targetLangu
   return cleanTranscript(text);
 }
 
-const QUESTION_SCHEMA = {
+export const QUESTION_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: ['questions'],

@@ -1,11 +1,18 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
-import { captionsEnabled, config, quizEnabled } from './config.js';
+import { config } from './config.js';
 import { registerCaptionRoutes } from './routes/captions.js';
 import { registerQuizRoutes } from './routes/quiz.js';
 import { registerStationRoutes } from './routes/stations.js';
 import { registerStatsRoutes } from './routes/stats.js';
 import { ffmpegAvailable, sweepTmpDir } from './services/capture.js';
+import {
+  captionsEnabled,
+  getProviderStatus,
+  initializeProviders,
+  quizEnabled,
+  shutdownProviders,
+} from './services/providers.js';
 import { getStations } from './services/stations.js';
 import type { HealthResponse } from './types.js';
 
@@ -18,6 +25,11 @@ const app = Fastify({
 });
 
 await app.register(cors, { origin: true });
+await initializeProviders();
+
+app.addHook('onClose', async () => {
+  shutdownProviders();
+});
 
 app.get('/api/health', async (): Promise<HealthResponse> => ({
   ok: true,
@@ -26,6 +38,8 @@ app.get('/api/health', async (): Promise<HealthResponse> => ({
   targetLanguage: config.targetLanguage,
   captureSeconds: config.captureSeconds,
   captionChunkSeconds: config.captionChunkSeconds,
+  transcribeProvider: getProviderStatus().transcribeProvider,
+  quizProvider: getProviderStatus().quizProvider,
   ffmpegAvailable: await ffmpegAvailable(),
 }));
 
@@ -39,8 +53,12 @@ sweepTmpDir();
 try {
   await app.listen({ port: config.port, host: config.host });
   app.log.info(
-    { targetLanguage: config.targetLanguage, quizEnabled: quizEnabled() },
-    quizEnabled() ? 'quizzes enabled' : 'quizzes disabled — add OPENAI_API_KEY to server/.env',
+    {
+      targetLanguage: config.targetLanguage,
+      transcribeProvider: getProviderStatus().transcribeProvider,
+      quizProvider: getProviderStatus().quizProvider,
+    },
+    'resolved model providers',
   );
 
   // Warm the station cache so the first globe load is instant. Failure here is

@@ -132,6 +132,8 @@ export interface HealthResponse {
   targetLanguage: string;
   captureSeconds: number;
   captionChunkSeconds: number;
+  transcribeProvider: string;
+  quizProvider: string;
   /** ffmpeg unlocks HLS (.m3u8) and AAC stations for quizzes. */
   ffmpegAvailable: boolean;
 }

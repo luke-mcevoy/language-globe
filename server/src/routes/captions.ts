@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify';
-import { captionsEnabled, config } from '../config.js';
+import { config } from '../config.js';
 import { captionText } from '../lib/captions.js';
 import { CaptureError, captureStream } from '../services/capture.js';
-import { describeOpenAiError, transcribe } from '../services/openai.js';
+import { describeOpenAiError } from '../services/openai.js';
+import { captionsEnabled, transcribeAudio } from '../services/providers.js';
 import { getStations } from '../services/stations.js';
 import type { CaptionsResponse } from '../types.js';
 
@@ -11,7 +12,7 @@ export async function registerCaptionRoutes(app: FastifyInstance): Promise<void>
     if (!captionsEnabled()) {
       return reply.status(503).send({
         error: 'captions_disabled',
-        message: 'Add OPENAI_API_KEY to server/.env to enable live captions.',
+        message: 'No transcription provider is available. Install local Whisper or set OPENAI_API_KEY in server/.env.',
       });
     }
 
@@ -30,7 +31,7 @@ export async function registerCaptionRoutes(app: FastifyInstance): Promise<void>
       const capture = await captureStream(station.url, config.captionChunkSeconds);
       let transcript = '';
       try {
-        transcript = await transcribe(capture.filePath);
+        transcript = await transcribeAudio(capture.filePath);
       } finally {
         await capture.cleanup();
       }

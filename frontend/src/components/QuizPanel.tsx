@@ -214,11 +214,10 @@ function DisabledState() {
       <div className="quiz__key-icon" aria-hidden="true">
         🔑
       </div>
-      <p className="quiz__error-title">Quizzes need an API key</p>
+      <p className="quiz__error-title">Quizzes need a model provider</p>
       <p className="quiz__error-message">
-        Add <code>OPENAI_API_KEY</code> to <code>server/.env</code> and restart the server to turn on
-        transcription and question generation. Everything else — the globe, the radio, your stats — works
-        without it.
+        Start the local Whisper and Ollama providers, or add <code>OPENAI_API_KEY</code> to <code>server/.env</code>
+        and restart the server. Everything else — the globe, the radio, your stats — works without them.
       </p>
     </div>
   );

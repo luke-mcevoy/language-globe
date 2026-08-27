@@ -141,7 +141,9 @@ export default function App() {
 
         {health && !health.quizEnabled && (
           <View style={styles.notice}>
-            <Text style={styles.noticeText}>Quizzes are off until OPENAI_API_KEY is set on the server.</Text>
+            <Text style={styles.noticeText}>
+              Quizzes are off until local models are available or OPENAI_API_KEY is set on the server.
+            </Text>
           </View>
         )}
 
@@ -168,6 +170,7 @@ export default function App() {
         radio={radio}
         captionsEnabled={health?.captionsEnabled ?? false}
         captionsOpen={captionsOpen}
+        quizEnabled={health?.quizEnabled ?? false}
         quizOpen={quizOpen}
         onCaptions={() => setCaptionsOpen((open) => !open)}
         onQuiz={() => setQuizOpen(true)}

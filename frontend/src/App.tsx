@@ -182,7 +182,7 @@ export function App() {
       {health && !health.quizEnabled && (
         <div className="hud hud--notice">
           <p className="notice glass">
-            Quizzes are off — add <code>OPENAI_API_KEY</code> to <code>server/.env</code> and restart the
+            Quizzes are off — local models are unavailable and no <code>OPENAI_API_KEY</code> is set on the
             server.
           </p>
         </div>

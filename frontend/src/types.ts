@@ -120,5 +120,7 @@ export interface HealthResponse {
   targetLanguage: string;
   captureSeconds: number;
   captionChunkSeconds: number;
+  transcribeProvider: string;
+  quizProvider: string;
   ffmpegAvailable: boolean;
 }

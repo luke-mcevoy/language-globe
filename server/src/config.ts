@@ -22,6 +22,16 @@ export const config = {
   openaiApiKey: process.env.OPENAI_API_KEY?.trim() ?? '',
   quizModel: process.env.OPENAI_QUIZ_MODEL ?? 'gpt-4o-mini',
   transcribeModel: process.env.OPENAI_TRANSCRIBE_MODEL ?? 'whisper-1',
+  transcribeProvider: process.env.TRANSCRIBE_PROVIDER ?? 'auto',
+  quizProvider: process.env.QUIZ_PROVIDER ?? 'auto',
+  whisperModelPath: process.env.WHISPER_MODEL_PATH ?? path.join(serverRoot, 'models/ggml-large-v3-turbo.bin'),
+  whisperServerBin: process.env.WHISPER_SERVER_BIN ?? '/opt/homebrew/bin/whisper-server',
+  whisperCliBin: process.env.WHISPER_CLI_BIN ?? 'whisper-cli',
+  whisperServerUrl: process.env.WHISPER_SERVER_URL ?? 'http://127.0.0.1:8788',
+  whisperServerHost: process.env.WHISPER_SERVER_HOST ?? '127.0.0.1',
+  whisperServerPort: num(process.env.WHISPER_SERVER_PORT, 8788),
+  ollamaUrl: process.env.OLLAMA_URL ?? 'http://127.0.0.1:11434',
+  ollamaModel: process.env.OLLAMA_MODEL ?? 'qwen2.5:7b-instruct',
   dbPath: path.isAbsolute(dbPath) ? dbPath : path.join(serverRoot, dbPath),
   tmpDir: path.join(serverRoot, 'tmp'),
   captureSeconds: num(process.env.CAPTURE_SECONDS, 60),
@@ -31,10 +41,6 @@ export const config = {
   stationsCacheTtlMs: 6 * 60 * 60 * 1000,
   userAgent: 'language-globe/0.1 (https://github.com/luke-mcevoy/language-globe)',
 } as const;
-
-export const quizEnabled = (): boolean => config.openaiApiKey.length > 0;
-
-export const captionsEnabled = (): boolean => quizEnabled();
 
 /**
  * ISO-639-1 hint for the transcription model. Unknown languages simply get no

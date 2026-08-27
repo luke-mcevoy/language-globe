@@ -121,7 +121,7 @@ export function PlayerBar({
         onClick={onCaptions}
         disabled={!captionsEnabled}
         aria-pressed={captionsOpen}
-        title={captionsEnabled ? 'Toggle live captions' : 'Needs an OpenAI API key'}
+        title={captionsEnabled ? 'Toggle live captions' : 'Needs local Whisper or an OpenAI API key'}
       >
         CC
       </button>
@@ -131,7 +131,7 @@ export function PlayerBar({
         className="button button--accent player__quiz"
         onClick={onQuiz}
         disabled={!quizEnabled || quizOpen}
-        title={quizEnabled ? 'Capture a minute of this station and quiz yourself' : 'Needs an OpenAI API key'}
+        title={quizEnabled ? 'Capture a minute of this station and quiz yourself' : 'Needs local models or an OpenAI API key'}
       >
         Quiz me
       </button>

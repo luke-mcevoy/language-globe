@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { config, quizEnabled } from '../config.js';
+import { config } from '../config.js';
 import { getQuiz, insertQuiz, recordResult } from '../db.js';
 import { gradeQuiz } from '../lib/grading.js';
 import { countWords } from '../lib/text.js';
 import { CaptureError, captureStream } from '../services/capture.js';
-import { describeOpenAiError, generateQuestions, transcribe } from '../services/openai.js';
+import { describeOpenAiError } from '../services/openai.js';
+import { generateQuizQuestions, quizEnabled, transcribeAudio } from '../services/providers.js';
 import { getStations, suggestTalkStation } from '../services/stations.js';
 import type { Difficulty, QuizQuestion, QuizStartResponse, QuizSubmitResponse } from '../types.js';
 
@@ -24,7 +25,7 @@ export async function registerQuizRoutes(app: FastifyInstance): Promise<void> {
     if (!quizEnabled()) {
       return reply.status(503).send({
         error: 'quiz_disabled',
-        message: 'Add OPENAI_API_KEY to server/.env to enable quizzes.',
+        message: 'No quiz provider is available. Install local models or set OPENAI_API_KEY in server/.env.',
       });
     }
 
@@ -44,7 +45,7 @@ export async function registerQuizRoutes(app: FastifyInstance): Promise<void> {
     try {
       const capture = await captureStream(station.url);
       try {
-        transcript = await transcribe(capture.filePath);
+        transcript = await transcribeAudio(capture.filePath);
       } finally {
         // Always remove the clip, including when transcription throws.
         await capture.cleanup();
@@ -76,7 +77,7 @@ export async function registerQuizRoutes(app: FastifyInstance): Promise<void> {
 
     let questions: QuizQuestion[];
     try {
-      questions = await generateQuestions(transcript, difficulty);
+      questions = await generateQuizQuestions(transcript, difficulty);
     } catch (error) {
       request.log.error({ err: error, stationId }, 'question generation failed');
       const known = describeOpenAiError(error);

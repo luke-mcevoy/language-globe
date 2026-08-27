@@ -103,16 +103,18 @@ async function captureDirect(url: string, response: Response, extension: string,
   const cleanup = makeCleanup(filePath);
 
   const reader = response.body.getReader();
-  const deadline = Date.now() + seconds * 1000;
   let bytes = 0;
 
+  // One shared deadline promise: racing a fresh setTimeout per chunk would
+  // leave thousands of live timers on a low-bitrate 60s capture.
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  const deadlineReached = new Promise<null>((resolve) => {
+    deadlineTimer = setTimeout(() => resolve(null), seconds * 1000);
+  });
+
   try {
-    while (Date.now() < deadline && bytes < config.captureMaxBytes) {
-      const remaining = deadline - Date.now();
-      const chunk = await Promise.race([
-        reader.read(),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), remaining)),
-      ]);
+    while (bytes < config.captureMaxBytes) {
+      const chunk = await Promise.race([reader.read(), deadlineReached]);
       if (chunk === null) break; // hit the capture deadline mid-read
       if (chunk.done) break;
       if (chunk.value) {
@@ -125,6 +127,7 @@ async function captureDirect(url: string, response: Response, extension: string,
     await cleanup();
     throw new CaptureError('stream_failed', `Stream read failed: ${(error as Error).message}`);
   } finally {
+    clearTimeout(deadlineTimer);
     await reader.cancel().catch(() => undefined);
   }
 

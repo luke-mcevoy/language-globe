@@ -1,9 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiError, getHealth, getStations, getStats } from './api';
 import { GlobeView, KIND_COLORS } from './components/GlobeView';
 import { PlayerBar } from './components/PlayerBar';
 import { QuizPanel } from './components/QuizPanel';
-import { StatsPanel } from './components/StatsPanel';
+
+// Recharts is only needed once the user opens their progress, so keep it out
+// of the initial bundle.
+const StatsPanel = lazy(() =>
+  import('./components/StatsPanel').then((module) => ({ default: module.StatsPanel })),
+);
 import { useRadio } from './hooks/useRadio';
 import { titleCase } from './lib/format';
 import type { HealthResponse, Station, StatsResponse } from './types';
@@ -211,12 +216,14 @@ export function App() {
       )}
 
       {statsOpen && (
-        <StatsPanel
-          stats={stats.status === 'ready' ? stats.data : null}
-          loading={stats.status === 'loading'}
-          error={stats.status === 'error' ? stats.message : null}
-          onClose={() => setStatsOpen(false)}
-        />
+        <Suspense fallback={null}>
+          <StatsPanel
+            stats={stats.status === 'ready' ? stats.data : null}
+            loading={stats.status === 'loading'}
+            error={stats.status === 'error' ? stats.message : null}
+            onClose={() => setStatsOpen(false)}
+          />
+        </Suspense>
       )}
 
       <div className={`boot${booting ? '' : ' boot--done'}`} aria-hidden={!booting}>

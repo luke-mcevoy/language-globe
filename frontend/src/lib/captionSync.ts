@@ -36,20 +36,36 @@ export function sessionTimeAt(anchor: PlaybackAnchor, audioCurrentTimeSeconds: n
 }
 
 /**
- * The client knows two independent views of "where is the audio right now":
- * the wall-clock estimate (client time since session started, minus the
- * fixed relay delay) and the audio element's currentTime. Snapping the
- * anchor at each new chunk pins the second to the first, so highlighting
- * cannot drift arbitrarily far even if the browser's MP3 decoder disagrees
- * with real time.
+ * The audio element's currentTime is the authoritative clock: the relay
+ * serves the stream from session-offset 0, so currentTime maps 1:1 onto the
+ * word timestamps regardless of when playback managed to start. The
+ * wall-clock estimate (client time since session start minus the relay
+ * delay) is only a coarse sanity check — it is systematically wrong by the
+ * player's startup lag (connect + pre-buffer, easily seconds), so snapping
+ * to it continuously pushes the highlight AHEAD of the audio. We therefore
+ * re-anchor only when the two clocks disagree so badly that the audio
+ * element must have reconnected mid-session (its currentTime restarts at 0
+ * while the relay resumes mid-stream).
  */
 export function reanchorPlayback(params: {
+  anchor: PlaybackAnchor;
   clientNowMs: number;
   sessionEpochMs: number;
   relayDelayMs: number;
   audioCurrentTimeSeconds: number;
+  /**
+   * How far the clocks may disagree before we snap to the wall estimate.
+   * Must exceed the worst honest disagreement: the switch margin (~8s) plus
+   * player startup lag — otherwise we would "correct" ordinary startup into
+   * a permanent lead. Reconnect desyncs grow with playback position, so
+   * they still clear this bar within a chunk or two.
+   */
+  toleranceMs?: number;
 }): PlaybackAnchor {
+  const toleranceMs = params.toleranceMs ?? 15_000;
   const expectedSessionMs = params.clientNowMs - params.sessionEpochMs - params.relayDelayMs;
+  const audioSessionMs = sessionTimeAt(params.anchor, params.audioCurrentTimeSeconds);
+  if (Math.abs(expectedSessionMs - audioSessionMs) <= toleranceMs) return params.anchor;
   return { baseOffsetMs: expectedSessionMs - params.audioCurrentTimeSeconds * 1000 };
 }
 

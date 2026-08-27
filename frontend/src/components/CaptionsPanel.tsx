@@ -164,7 +164,11 @@ export function CaptionsPanel({
     if (syncReady || !sessionId) return;
     const buffer = bufferRef.current;
     if (!buffer) return;
-    const marginMs = 1_500;
+    // Well past the delay on purpose: at switch time the relay can then hand
+    // the <audio> element ~8s of data instantly, so playback starts in ~1s
+    // instead of trickling at 1x while the browser pre-buffers (~10s of
+    // silence between the live stream stopping and the synced one starting).
+    const marginMs = 8_000;
     const bufferedNow = buffer.bufferedMs + (performance.now() - buffer.atMs);
     const remainingMs = delaySeconds * 1000 + marginMs - bufferedNow;
     if (remainingMs <= 0) {
@@ -191,6 +195,7 @@ export function CaptionsPanel({
     const audio = getAudioElement();
     if (!audio || audio.currentTime < 0.05) return;
     anchorRef.current = reanchorPlayback({
+      anchor: anchorRef.current,
       clientNowMs: performance.now(),
       sessionEpochMs: sessionEpochRef.current,
       relayDelayMs: delaySeconds * 1000,

@@ -1,0 +1,13 @@
+.git
+.github
+docs
+mobile
+!mobile/package.json
+node_modules
+**/node_modules
+**/dist
+server/data
+server/tmp
+server/models
+server/.env
+*.md

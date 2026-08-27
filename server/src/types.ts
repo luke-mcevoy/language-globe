@@ -84,10 +84,20 @@ export interface QuizSubmitResponse {
   transcript: string;
 }
 
-export interface CaptionsResponse {
+export interface CaptionChunk {
+  seq: number;
   text: string;
-  chunkSeconds: number;
   capturedAt: string;
+}
+
+export interface CaptionSessionCreatedResponse {
+  sessionId: string;
+  chunkSeconds: number;
+  audioContentType: string;
+}
+
+export interface CaptionPollResponse {
+  chunks: CaptionChunk[];
 }
 
 export interface DailyAccuracy {

@@ -1,12 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { ApiError, getCaptions } from '../lib/api';
-import type { Station } from '../types';
-
-interface CaptionChunk {
-  id: string;
-  text: string;
-}
+import { ApiError, pollCaptionSession, startCaptionSession, stopCaptionSession } from '../lib/api';
+import type { CaptionChunk, Station } from '../types';
 
 interface CaptionsPanelProps {
   station: Station | null;
@@ -17,14 +12,7 @@ interface CaptionsPanelProps {
   onClose: () => void;
 }
 
-export function CaptionsPanel({
-  chunkSeconds,
-  enabled,
-  onClose,
-  paused,
-  station,
-  visible,
-}: CaptionsPanelProps) {
+export function CaptionsPanel({ chunkSeconds, enabled, onClose, paused, station, visible }: CaptionsPanelProps) {
   const [chunks, setChunks] = useState<CaptionChunk[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,27 +29,40 @@ export function CaptionsPanel({
       return;
     }
 
+    const stationId = station.id;
     let cancelled = false;
+    let session: string | null = null;
     let controller: AbortController | null = null;
 
     async function loop() {
-      while (!cancelled && station) {
+      setPending(true);
+      try {
         controller = new AbortController();
-        setPending(true);
-        try {
-          const response = await getCaptions(station.id, controller.signal);
-          if (cancelled) return;
-          setError(null);
-          setChunks((previous) =>
-            [...previous, { id: `${response.capturedAt}-${previous.length}`, text: response.text }].slice(-40),
-          );
-        } catch (error) {
-          if (cancelled || (error instanceof Error && error.name === 'AbortError')) return;
-          setError(error instanceof ApiError ? error.message : 'Could not load captions.');
-          await new Promise((resolve) => setTimeout(resolve, 1500));
-        } finally {
-          if (!cancelled) setPending(false);
+        const created = await startCaptionSession(stationId, controller.signal);
+        session = created.sessionId;
+        if (cancelled) {
+          // Cleanup ran before the id arrived; release the session ourselves.
+          void stopCaptionSession(created.sessionId).catch(() => undefined);
+          return;
         }
+        setError(null);
+
+        let after = 0;
+        while (!cancelled) {
+          controller = new AbortController();
+          const response = await pollCaptionSession(created.sessionId, after, controller.signal);
+          if (cancelled) return;
+          if (response.chunks.length > 0) {
+            after = response.chunks[response.chunks.length - 1]?.seq ?? after;
+            setError(null);
+            setChunks((previous) => [...previous, ...response.chunks].slice(-40));
+          }
+          setPending(false);
+        }
+      } catch (error) {
+        if (cancelled || (error instanceof Error && error.name === 'AbortError')) return;
+        setError(error instanceof ApiError ? error.message : 'Could not load captions.');
+        setPending(false);
       }
     }
 
@@ -69,6 +70,7 @@ export function CaptionsPanel({
     return () => {
       cancelled = true;
       controller?.abort();
+      if (session) void stopCaptionSession(session).catch(() => undefined);
     };
   }, [enabled, paused, station, visible]);
 
@@ -100,7 +102,7 @@ export function CaptionsPanel({
         )}
         {chunks.map((chunk, index) => (
           <Text
-            key={chunk.id}
+            key={chunk.seq}
             style={[
               styles.chunk,
               index === chunks.length - 1 && styles.latest,
@@ -116,7 +118,7 @@ export function CaptionsPanel({
       </ScrollView>
       <View style={styles.footer}>
         <Text style={styles.footerText}>{wordCount} words</Text>
-        <Text style={styles.footerText}>~{chunkSeconds}s behind live</Text>
+        <Text style={styles.footerText}>session polling · ~{chunkSeconds}s capture windows</Text>
       </View>
     </View>
   );

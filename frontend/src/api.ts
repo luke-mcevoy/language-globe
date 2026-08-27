@@ -1,5 +1,6 @@
 import type {
-  CaptionsResponse,
+  CaptionPollResponse,
+  CaptionSessionCreatedResponse,
   Difficulty,
   HealthResponse,
   QuizStartResponse,
@@ -36,6 +37,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(body?.error ?? 'request_failed', body?.message ?? `Request failed (${response.status})`, response.status);
   }
 
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 
@@ -45,12 +47,25 @@ export const getStations = (): Promise<StationsResponse> => request<StationsResp
 
 export const getStats = (): Promise<StatsResponse> => request<StatsResponse>('/api/stats');
 
-export const getCaptions = (stationId: string, signal?: AbortSignal): Promise<CaptionsResponse> =>
-  request<CaptionsResponse>('/api/captions', {
+export const startCaptionSession = (stationId: string, signal?: AbortSignal): Promise<CaptionSessionCreatedResponse> =>
+  request<CaptionSessionCreatedResponse>('/api/captions/session', {
     method: 'POST',
     body: JSON.stringify({ stationId }),
     signal,
   });
+
+export const pollCaptionSession = (
+  sessionId: string,
+  after: number,
+  signal?: AbortSignal,
+): Promise<CaptionPollResponse> =>
+  request<CaptionPollResponse>(`/api/captions/session/${encodeURIComponent(sessionId)}?after=${after}`, { signal });
+
+export const stopCaptionSession = (sessionId: string): Promise<void> =>
+  request<void>(`/api/captions/session/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+
+export const captionSessionAudioUrl = (sessionId: string, delaySeconds: number): string =>
+  `/api/captions/session/${encodeURIComponent(sessionId)}/audio?delay=${delaySeconds}`;
 
 export const startQuiz = (stationId: string, difficulty: Difficulty): Promise<QuizStartResponse> =>
   request<QuizStartResponse>('/api/quiz/start', {

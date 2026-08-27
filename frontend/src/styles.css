@@ -601,6 +601,36 @@ code {
   border-bottom: 1px solid var(--hairline);
 }
 
+.captions__controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.captions__mode {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.captions__mode-button {
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 9px;
+  color: var(--ink-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.captions__mode-button--active {
+  color: #061018;
+  background: var(--accent);
+}
+
 .captions__eyebrow {
   font-size: 10.5px;
   letter-spacing: 0.16em;
@@ -648,6 +678,11 @@ code {
 .captions__chunk--latest {
   color: var(--ink);
   font-size: 16px;
+}
+
+.captions__chunk--playing {
+  padding-left: 10px;
+  border-left: 2px solid var(--accent);
 }
 
 .captions__chunk--music {

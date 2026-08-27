@@ -24,6 +24,14 @@ export interface Capture {
   cleanup: () => Promise<void>;
 }
 
+export interface StreamSource {
+  url: string;
+  contentType: string;
+  extension: string;
+  body: ReadableStream<Uint8Array>;
+  cleanup: () => Promise<void>;
+}
+
 let ffmpegProbe: Promise<boolean> | null = null;
 
 export function ffmpegAvailable(): Promise<boolean> {
@@ -58,6 +66,10 @@ function contentType(response: Response): string {
 
 function looksLikeHls(url: string, type: string): boolean {
   return url.toLowerCase().includes('.m3u8') || HLS_TYPES.includes(type);
+}
+
+function isPlaylist(type: string): boolean {
+  return PLAYLIST_TYPES.includes(type);
 }
 
 async function ensureTmpDir(): Promise<void> {
@@ -195,6 +207,118 @@ async function captureWithFfmpeg(url: string, seconds: number): Promise<Capture>
   return { filePath, bytes: stat.size, cleanup };
 }
 
+async function openFfmpegStream(url: string): Promise<StreamSource> {
+  const args = [
+    '-nostdin',
+    '-loglevel', 'error',
+    '-user_agent', config.userAgent,
+    '-i', url,
+    '-vn',
+    '-ac', '1',
+    '-ar', '16000',
+    '-b:a', '64k',
+    '-f', 'mp3',
+    'pipe:1',
+  ];
+
+  const child = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'ignore'] });
+  if (!child.stdout) throw new CaptureError('unsupported_stream', 'ffmpeg did not expose an audio stream.');
+
+  let closed = false;
+  const cleanup = async () => {
+    if (closed) return;
+    closed = true;
+    child.kill('SIGKILL');
+  };
+
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      child.stdout?.on('data', (data: Buffer) => controller.enqueue(new Uint8Array(data)));
+      child.stdout?.on('end', () => {
+        if (!closed) controller.close();
+      });
+      child.on('error', (error) => controller.error(error));
+      child.on('close', (code) => {
+        closed = true;
+        if (code !== 0 && code !== null) controller.error(new CaptureError('stream_failed', `ffmpeg exited ${code}`));
+      });
+    },
+    cancel() {
+      void cleanup();
+    },
+  });
+
+  return { url, contentType: 'audio/mpeg', extension: 'mp3', body, cleanup };
+}
+
+export async function openStreamSource(streamUrl: string): Promise<StreamSource> {
+  let url = streamUrl;
+
+  for (let hop = 0; hop < 2; hop++) {
+    if (looksLikeHls(url, '')) {
+      if (!(await ffmpegAvailable())) {
+        throw new CaptureError('unsupported_stream', 'This station uses HLS, which needs ffmpeg installed.');
+      }
+      return openFfmpegStream(url);
+    }
+
+    const controller = new AbortController();
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        headers: { 'User-Agent': config.userAgent, Accept: '*/*' },
+        signal: controller.signal,
+        redirect: 'follow',
+      });
+    } catch (error) {
+      throw new CaptureError('stream_failed', `Could not connect to the stream: ${(error as Error).message}`);
+    }
+
+    if (!response.ok) {
+      controller.abort();
+      throw new CaptureError('stream_failed', `Stream responded ${response.status}`);
+    }
+
+    const type = contentType(response);
+
+    if (isPlaylist(type)) {
+      const body = await response.text();
+      const next = firstUrlInPlaylist(body);
+      if (!next) throw new CaptureError('unsupported_stream', 'Station returned an empty playlist.');
+      url = new URL(next, url).toString();
+      continue;
+    }
+
+    if (looksLikeHls(url, type)) {
+      controller.abort();
+      if (!(await ffmpegAvailable())) {
+        throw new CaptureError('unsupported_stream', 'This station uses HLS, which needs ffmpeg installed.');
+      }
+      return openFfmpegStream(url);
+    }
+
+    const extension = DIRECT_EXTENSIONS[type];
+    if (extension && response.body) {
+      return {
+        url,
+        contentType: type || 'audio/mpeg',
+        extension,
+        body: response.body,
+        cleanup: async () => controller.abort(),
+      };
+    }
+
+    controller.abort();
+    if (await ffmpegAvailable()) return openFfmpegStream(url);
+    throw new CaptureError(
+      'unsupported_stream',
+      `This station streams ${type || 'an unknown format'}, which needs ffmpeg installed.`,
+    );
+  }
+
+  throw new CaptureError('unsupported_stream', 'Too many playlist redirects.');
+}
+
 /**
  * Captures a clip of a live station. Returns a temp file the caller must
  * `cleanup()` once transcription is done.
@@ -230,7 +354,7 @@ export async function captureStream(streamUrl: string, seconds = config.captureS
 
     const type = contentType(response);
 
-    if (PLAYLIST_TYPES.includes(type)) {
+    if (isPlaylist(type)) {
       const body = await response.text();
       const next = firstUrlInPlaylist(body);
       if (!next) throw new CaptureError('unsupported_stream', 'Station returned an empty playlist.');
@@ -261,11 +385,11 @@ export async function captureStream(streamUrl: string, seconds = config.captureS
   throw new CaptureError('unsupported_stream', 'Too many playlist redirects.');
 }
 
-/** Clears anything a crashed capture left behind; called once at boot. */
+/** Clears anything a crashed capture or caption session left behind; called once at boot. */
 export function sweepTmpDir(): void {
   if (!fs.existsSync(config.tmpDir)) return;
   for (const entry of fs.readdirSync(config.tmpDir)) {
-    if (entry.startsWith('capture-')) {
+    if (entry.startsWith('capture-') || entry.startsWith('caption-')) {
       fs.rmSync(path.join(config.tmpDir, entry), { force: true });
     }
   }

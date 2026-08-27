@@ -17,6 +17,7 @@ export interface Radio {
   stop: () => void;
   retry: () => void;
   setVolume: (value: number) => void;
+  setAudioUrlOverride: (url: string | null) => void;
   toggleMute: () => void;
 }
 
@@ -42,6 +43,7 @@ export function useRadio(): Radio {
   const [deadStations, setDeadStations] = useState<ReadonlySet<string>>(() => new Set());
   /** Bumped by retry() to re-run the attach effect with the same station. */
   const [attempt, setAttempt] = useState(0);
+  const [audioUrlOverride, setAudioUrlOverride] = useState<string | null>(null);
 
   if (audioRef.current === null && typeof Audio !== 'undefined') {
     const audio = new Audio();
@@ -67,6 +69,7 @@ export function useRadio(): Radio {
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !station) return;
+    const audioUrl = audioUrlOverride ?? station.url;
 
     setStatus('loading');
     setError(null);
@@ -97,7 +100,7 @@ export function useRadio(): Radio {
     audio.addEventListener('waiting', onWaiting);
     audio.addEventListener('error', onError);
 
-    if (isHls(station.url) && Hls.isSupported()) {
+    if (!audioUrlOverride && isHls(station.url) && Hls.isSupported()) {
       const hls = new Hls({ enableWorker: true, lowLatencyMode: false });
       hlsRef.current = hls;
       hls.loadSource(station.url);
@@ -107,7 +110,7 @@ export function useRadio(): Radio {
       });
     } else {
       // Safari plays HLS natively; everything else is a plain audio URL.
-      audio.src = station.url;
+      audio.src = audioUrl;
       audio.load();
     }
 
@@ -130,9 +133,10 @@ export function useRadio(): Radio {
       audio.removeAttribute('src');
       audio.load();
     };
-  }, [station, attempt, markDead]);
+  }, [station, attempt, markDead, audioUrlOverride]);
 
   const tune = useCallback((next: Station) => {
+    setAudioUrlOverride(null);
     setStation(next);
     setDeadStations((previous) => {
       if (!previous.has(next.id)) return previous;
@@ -155,6 +159,7 @@ export function useRadio(): Radio {
 
   const stop = useCallback(() => {
     audioRef.current?.pause();
+    setAudioUrlOverride(null);
     setStation(null);
     setStatus('idle');
     setError(null);
@@ -181,6 +186,7 @@ export function useRadio(): Radio {
     stop,
     retry,
     setVolume,
+    setAudioUrlOverride,
     toggleMute,
   };
 }

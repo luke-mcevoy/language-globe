@@ -69,6 +69,28 @@ describe('CaptionSessionStore', () => {
     );
   });
 
+  it('serializes concurrent creates so same-station duplicates cannot slip past eviction', async () => {
+    // Slow openSource simulates the real stream connection: without
+    // serialization, both creates pass the eviction scan before either
+    // session lands in the map, leaving two sessions for one station.
+    const openSource = () =>
+      new Promise<void>((resolve) => setTimeout(resolve, 20)).then(() => ({
+        url: station.url,
+        contentType: 'audio/mpeg',
+        extension: 'mp3',
+        body: new ReadableStream<Uint8Array>({ start: () => undefined }),
+        cleanup: async () => undefined,
+      }));
+    const store = new CaptionSessionStore({ maxSessions: 2, openSource, transcribe: async () => '' });
+
+    const [first, second] = await Promise.all([store.create(station), store.create(station)]);
+    expect(store.size).toBe(1);
+    expect(store.get(first.id)).toBeNull();
+    expect(store.get(second.id)).toBe(second);
+
+    store.clear();
+  });
+
   it('replaces an existing session for the same station instead of counting it against the cap', () => {
     const store = new CaptionSessionStore({ maxSessions: 2 });
     const first = new CaptionSession(station);

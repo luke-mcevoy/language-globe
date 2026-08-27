@@ -301,6 +301,8 @@ export class CaptionSessionStore {
   readonly longPollMs: number;
   private readonly sessionOptions: CaptionSessionOptions;
   private readonly sessions = new Map<string, { session: CaptionSession; expiry: ReturnType<typeof setTimeout> }>();
+  /** Serializes create(); see the comment inside create for why. */
+  private createChain: Promise<unknown> = Promise.resolve();
 
   constructor(options: CaptionSessionStoreOptions = {}) {
     this.maxSessions = options.maxSessions ?? 2;
@@ -327,6 +329,17 @@ export class CaptionSessionStore {
   }
 
   async create(station: Station): Promise<CaptionSession> {
+    // Creates must run one at a time: the session only lands in the map
+    // *after* session.start() opens the stream (seconds), so two concurrent
+    // creates for the same station would both pass the eviction scan and the
+    // cap check, then both insert — filling the cap with duplicates. React
+    // StrictMode's double-mount fires exactly that pattern.
+    const run = this.createChain.then(() => this.createSerialized(station));
+    this.createChain = run.catch(() => undefined);
+    return run;
+  }
+
+  private async createSerialized(station: Station): Promise<CaptionSession> {
     this.evictStationSessions(station.id);
 
     if (this.sessions.size >= this.maxSessions) {

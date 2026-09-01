@@ -4,6 +4,7 @@ import path from 'node:path';
 import { config } from './config.js';
 import { createAuthStore } from './lib/auth.js';
 import { createFavoritesStore } from './lib/favorites.js';
+import { createPresenceStore, createSocialStore } from './lib/social.js';
 import { createVocabStore } from './lib/vocab.js';
 import type { Difficulty, QuizQuestion } from './types.js';
 import type { QuizResultRow } from './lib/stats.js';
@@ -68,6 +69,13 @@ export const favoritesStore = createFavoritesStore(db);
 
 /** "Words I didn't know" — caption word lookups, same store pattern. */
 export const vocabStore = createVocabStore(db);
+
+/**
+ * Follows live in the same DB (table created inside the store). Presence is
+ * in-memory and expires without a heartbeat.
+ */
+export const socialStore = createSocialStore(db);
+export const presenceStore = createPresenceStore();
 
 export interface StoredQuiz {
   id: string;

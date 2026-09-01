@@ -27,6 +27,7 @@ interface WordLookup {
   word: string;
   status: 'loading' | 'ready' | 'error';
   entry?: VocabEntry;
+  saved?: boolean;
   message?: string;
   /** Popover anchor in viewport coordinates (position: fixed). */
   top: number;
@@ -136,7 +137,9 @@ export function CaptionsPanel({
       lookupWord(word, context, station.name)
         .then((response) =>
           setLookup((current) =>
-            current?.word === word ? { ...current, status: 'ready', entry: response.entry } : current,
+            current?.word === word
+              ? { ...current, status: 'ready', entry: response.entry, saved: response.saved }
+              : current,
           ),
         )
         .catch((error: unknown) =>
@@ -442,8 +445,9 @@ export function CaptionsPanel({
               <p className="word-popover__translation">{lookup.entry.translation}</p>
               {lookup.entry.note && <p className="word-popover__note">{lookup.entry.note}</p>}
               <p className="word-popover__saved">
-                ✓ Saved to your vocab
-                {lookup.entry.timesLookedUp > 1 ? ` · looked up ${lookup.entry.timesLookedUp}×` : ''}
+                {lookup.saved
+                  ? `✓ Saved to your vocab${lookup.entry.timesLookedUp > 1 ? ` · looked up ${lookup.entry.timesLookedUp}×` : ''}`
+                  : 'Sign in to save words you look up'}
               </p>
             </>
           )}

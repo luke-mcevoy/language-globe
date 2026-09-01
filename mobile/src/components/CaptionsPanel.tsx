@@ -41,6 +41,7 @@ interface WordLookup {
   word: string;
   status: 'loading' | 'ready' | 'error';
   entry?: VocabEntry;
+  saved?: boolean;
   message?: string;
 }
 
@@ -235,7 +236,9 @@ export function CaptionsPanel({
       lookupWord(word, context, stationName)
         .then((response) =>
           setLookup((current) =>
-            current?.word === word ? { ...current, status: 'ready', entry: response.entry } : current,
+            current?.word === word
+              ? { ...current, status: 'ready', entry: response.entry, saved: response.saved }
+              : current,
           ),
         )
         .catch((err: unknown) =>
@@ -346,8 +349,9 @@ export function CaptionsPanel({
               <Text style={styles.lookupTranslation}>{lookup.entry.translation}</Text>
               {lookup.entry.note ? <Text style={styles.lookupNote}>{lookup.entry.note}</Text> : null}
               <Text style={styles.lookupSaved}>
-                ✓ Saved to your vocab
-                {lookup.entry.timesLookedUp > 1 ? ` · looked up ${lookup.entry.timesLookedUp}×` : ''}
+                {lookup.saved
+                  ? `✓ Saved to your vocab${lookup.entry.timesLookedUp > 1 ? ` · looked up ${lookup.entry.timesLookedUp}×` : ''}`
+                  : 'Sign in to save words you look up'}
               </Text>
             </>
           )}

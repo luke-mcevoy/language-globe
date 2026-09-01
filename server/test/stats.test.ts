@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DAILY_WINDOW_DAYS, aggregateStats, computeStreak, dateKey } from '../src/lib/stats.js';
+import { ACCURACY_WINDOW_DAYS, DAILY_WINDOW_DAYS, accuracyForWindow, aggregateStats, computeStreak, dateKey } from '../src/lib/stats.js';
 import type { QuizResultRow } from '../src/lib/stats.js';
 
 const NOW = new Date(2026, 7, 26, 18, 0, 0); // 2026-08-26, local time
@@ -119,5 +119,25 @@ describe('computeStreak', () => {
     const streak = computeStreak([row(10), row(9), row(8), row(7), row(0)], NOW);
     expect(streak.longest).toBe(4);
     expect(streak.current).toBe(1);
+  });
+});
+
+describe('accuracyForWindow', () => {
+  it('ignores rows older than the window and returns null when empty', () => {
+    expect(accuracyForWindow([], ACCURACY_WINDOW_DAYS, NOW)).toBeNull();
+    expect(accuracyForWindow([row(20, { n_questions: 4, n_correct: 4 })], ACCURACY_WINDOW_DAYS, NOW)).toBeNull();
+  });
+
+  it('scores only the last 7 local days', () => {
+    const accuracy = accuracyForWindow(
+      [
+        row(0, { n_questions: 4, n_correct: 2 }),
+        row(6, { n_questions: 4, n_correct: 4 }),
+        row(7, { n_questions: 4, n_correct: 0 }),
+      ],
+      ACCURACY_WINDOW_DAYS,
+      NOW,
+    );
+    expect(accuracy).toBeCloseTo(6 / 8);
   });
 });

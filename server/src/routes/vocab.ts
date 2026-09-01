@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { vocabStore } from '../db.js';
-import { requireUser } from '../lib/resolveUser.js';
+import { requireUser, resolveUser } from '../lib/resolveUser.js';
 import { normalizeWord, type VocabRecord } from '../lib/vocab.js';
 import { quizEnabled, translateWord } from '../services/providers.js';
 import type { VocabEntry, VocabLookupResponse, VocabResponse } from '../types.js';
@@ -32,9 +32,10 @@ export async function registerVocabRoutes(app: FastifyInstance): Promise<void> {
     return { words: vocabStore.list(user.id).map(toEntry) };
   });
 
+  // Lookup translates for everyone; it only PERSISTS to a vocab list when
+  // signed in. Anonymous learners must not lose click-to-translate.
   app.post<{ Body: LookupBody }>('/api/vocab/lookup', async (request, reply) => {
-    const user = requireUser(request, reply);
-    if (!user) return;
+    const user = resolveUser(request);
 
     const word = typeof request.body?.word === 'string' ? request.body.word.trim() : '';
     const context = typeof request.body?.context === 'string' ? request.body.context.slice(0, 600) : '';
@@ -62,6 +63,25 @@ export async function registerVocabRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
+    if (!user) {
+      const now = new Date().toISOString();
+      const response: VocabLookupResponse = {
+        saved: false,
+        entry: {
+          id: 0,
+          word,
+          translation: translation.translation,
+          note: translation.note,
+          context,
+          stationName,
+          timesLookedUp: 0,
+          createdAt: now,
+          lastLookedUpAt: now,
+        },
+      };
+      return response;
+    }
+
     const record = vocabStore.record({
       userId: user.id,
       word,
@@ -70,7 +90,7 @@ export async function registerVocabRoutes(app: FastifyInstance): Promise<void> {
       context,
       stationName,
     });
-    const response: VocabLookupResponse = { entry: toEntry(record) };
+    const response: VocabLookupResponse = { saved: true, entry: toEntry(record) };
     return response;
   });
 

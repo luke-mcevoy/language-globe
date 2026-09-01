@@ -10,6 +10,7 @@ export interface QuizResultRow {
 }
 
 export const DAILY_WINDOW_DAYS = 30;
+export const ACCURACY_WINDOW_DAYS = 7;
 
 /** Local-time YYYY-MM-DD. Streaks should follow the user's day, not UTC's. */
 export function dateKey(date: Date): string {
@@ -27,6 +28,20 @@ function addDays(date: Date, days: number): Date {
 
 function accuracyOf(correct: number, questions: number): number | null {
   return questions > 0 ? correct / questions : null;
+}
+
+/** Accuracy over the last `days` local dates (including today). */
+export function accuracyForWindow(rows: QuizResultRow[], days: number, now: Date): number | null {
+  const oldest = dateKey(addDays(now, -(days - 1)));
+  let questions = 0;
+  let correct = 0;
+  for (const row of rows) {
+    if (dateKey(new Date(row.created_at)) >= oldest) {
+      questions += row.n_questions;
+      correct += row.n_correct;
+    }
+  }
+  return accuracyOf(correct, questions);
 }
 
 function buildDaily(rows: QuizResultRow[], now: Date): DailyAccuracy[] {

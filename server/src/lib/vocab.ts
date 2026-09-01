@@ -28,6 +28,7 @@ export interface VocabStore {
   record(input: VocabInput): VocabRecord;
   list(userId: string, limit?: number): VocabRecord[];
   remove(userId: string, id: number): boolean;
+  count(userId: string): number;
 }
 
 /**
@@ -91,6 +92,8 @@ export function createVocabStore(db: BetterDatabase): VocabStore {
 
   const removeStmt = db.prepare('DELETE FROM vocab_lookups WHERE user_id = ? AND id = ?');
 
+  const countStmt = db.prepare('SELECT COUNT(*) AS n FROM vocab_lookups WHERE user_id = ?');
+
   return {
     record({ userId, word, translation, note, context, stationName, now = new Date() }) {
       return upsertStmt.get({
@@ -109,6 +112,10 @@ export function createVocabStore(db: BetterDatabase): VocabStore {
     },
     remove(userId, id) {
       return removeStmt.run(userId, id).changes > 0;
+    },
+    count(userId) {
+      const row = countStmt.get(userId) as { n: number };
+      return row.n;
     },
   };
 }

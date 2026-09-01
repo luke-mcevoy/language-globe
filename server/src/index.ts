@@ -5,11 +5,12 @@ import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import { config, serverRoot } from './config.js';
-import { authStore } from './db.js';
+import { authStore, presenceStore, socialStore } from './db.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerCaptionRoutes } from './routes/captions.js';
 import { registerFavoriteRoutes } from './routes/favorites.js';
 import { registerQuizRoutes } from './routes/quiz.js';
+import { registerSocialRoutes } from './routes/social.js';
 import { registerStationRoutes } from './routes/stations.js';
 import { registerStatsRoutes } from './routes/stats.js';
 import { registerVocabRoutes } from './routes/vocab.js';
@@ -35,6 +36,8 @@ const app = Fastify({
 await app.register(cors, { origin: true, credentials: true });
 await app.register(cookie);
 app.decorate('authStore', authStore);
+app.decorate('socialStore', socialStore);
+app.decorate('presenceStore', presenceStore);
 await initializeProviders();
 
 app.addHook('onClose', async () => {
@@ -54,6 +57,7 @@ app.get('/api/health', async (): Promise<HealthResponse> => ({
 }));
 
 await registerAuthRoutes(app);
+await registerSocialRoutes(app);
 await registerStationRoutes(app);
 await registerCaptionRoutes(app);
 await registerQuizRoutes(app);

@@ -175,6 +175,8 @@ export interface VocabResponse {
 
 export interface VocabLookupResponse {
   entry: VocabEntry;
+  /** False for anonymous lookups: translated but not stored anywhere. */
+  saved: boolean;
 }
 
 export interface AuthUser {
@@ -185,4 +187,41 @@ export interface AuthUser {
 
 export interface MeResponse {
   user: AuthUser | null;
+}
+
+export interface ListeningNow {
+  stationName: string;
+  country: string;
+}
+
+export interface LeaderboardEntry {
+  userId: string;
+  username: string;
+  displayName: string;
+  streakDays: number;
+  quizCount: number;
+  accuracy7d: number | null;
+  vocabCount: number;
+  countriesCount: number;
+  listeningNow: ListeningNow | null;
+}
+
+export interface LeaderboardResponse {
+  entries: LeaderboardEntry[];
+}
+
+export interface FriendListening {
+  userId: string;
+  username: string;
+  displayName: string;
+  stationId: string;
+  stationName: string;
+  country: string;
+  lat: number;
+  lon: number;
+  startedAt: string;
+}
+
+export interface FriendsListeningResponse {
+  friends: FriendListening[];
 }

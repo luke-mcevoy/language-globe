@@ -33,6 +33,7 @@ html,
 body,
 #root {
   height: 100%;
+  height: 100dvh;
   margin: 0;
 }
 
@@ -86,6 +87,7 @@ code {
 .app {
   position: relative;
   height: 100%;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -2456,72 +2458,152 @@ code {
 
 /* ------------------------------------------------------------ responsive - */
 
-@media (max-width: 860px) {
+/*
+  1100px covers iPhone landscape (Pro Max is ~956 CSS px) which used to miss
+  the old 860px breakpoint and get the desktop chrome: header buttons clipped
+  off-screen, captions as a side card covering the globe, legend overlapping
+  the player.
+*/
+@media (max-width: 1100px) {
   .hud--top {
-    top: 14px;
-    left: 14px;
-    right: 14px;
+    top: max(10px, env(safe-area-inset-top));
+    left: max(10px, env(safe-area-inset-left));
+    right: max(10px, env(safe-area-inset-right));
     flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .hud__actions {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 8px;
+  }
+
+  .hud__actions::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  .hud__actions .button {
+    flex: none;
+    padding: 8px 12px;
+    font-size: 12.5px;
+    white-space: nowrap;
+  }
+
+  .brand {
+    padding: 8px 12px 8px 10px;
+  }
+
+  .brand__title {
+    font-size: 13px;
+  }
+
+  .brand__subtitle {
+    font-size: 11.5px;
   }
 
   .hud--legend {
-    display: none;
+    left: max(10px, env(safe-area-inset-left));
+    bottom: calc(108px + env(safe-area-inset-bottom));
+  }
+
+  .legend {
+    padding: 8px 10px;
+    gap: 5px;
   }
 
   .quiz {
     top: auto;
-    left: 14px;
-    right: 14px;
-    bottom: 14px;
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+    bottom: max(12px, env(safe-area-inset-bottom));
     width: auto;
-    max-height: 74vh;
+    max-height: 74dvh;
   }
 
   .player {
-    left: 14px;
-    right: 14px;
-    bottom: 14px;
+    left: max(10px, env(safe-area-inset-left));
+    right: max(10px, env(safe-area-inset-right));
+    bottom: max(10px, env(safe-area-inset-bottom));
     flex-wrap: wrap;
-    gap: 12px;
+    gap: 10px;
+    padding: 10px 12px;
   }
 
+  /* Hardware volume on phones; the slider just eats player-bar space. */
   .player__volume {
-    order: 3;
+    display: none;
   }
 
-  .player__quiz {
+  .player__quiz,
+  .player__cc {
     order: 4;
   }
 
   .player__cc {
-    order: 4;
     margin-left: auto;
   }
 
-  .captions {
-    top: auto;
-    left: auto;
-    right: 14px;
-    bottom: 184px;
-    width: min(280px, calc(100vw - 28px));
-    max-height: none;
-    transform: none;
+  /*
+    Cinematic subtitles are the captions UI on a phone. The docked history
+    card used to sit on the right and cover the globe — hide it unless the
+    user explicitly expands the transcript.
+  */
+  .captions--collapsed {
+    display: none;
   }
 
   .captions--expanded {
-    left: 14px;
-    right: 14px;
+    top: auto;
+    left: max(10px, env(safe-area-inset-left));
+    right: max(10px, env(safe-area-inset-right));
+    bottom: calc(108px + env(safe-area-inset-bottom));
     width: auto;
-    max-height: 38vh;
+    max-height: 38dvh;
+    transform: none;
   }
 
   .subtitles {
-    left: 8vw;
-    right: 8vw;
+    left: 5vw;
+    right: 5vw;
     width: auto;
     max-width: none;
-    bottom: 168px;
+    bottom: calc(118px + env(safe-area-inset-bottom));
     transform: none;
+  }
+
+  .subtitles__line {
+    font-size: clamp(18px, 4.6vw, 28px);
+  }
+
+  .subtitles__stage::before {
+    inset: -36px -24px -20px;
+  }
+
+  .subtitles__stage::after {
+    inset: -20px -16px -12px;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+
+  .tour {
+    width: min(420px, calc(100vw - 28px));
+    padding: 32px 20px 22px;
+  }
+
+  .modal {
+    padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+      max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  }
+
+  .word-popover {
+    width: min(250px, calc(100vw - 24px));
   }
 
   @keyframes rise-in {
@@ -2533,6 +2615,71 @@ code {
       opacity: 1;
       transform: none;
     }
+  }
+}
+
+/* Narrow phones (portrait). Keep every control reachable without side-cards. */
+@media (max-width: 520px) {
+  .hud__actions {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  .player {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) auto auto;
+    grid-template-areas: 'play identity cc quiz';
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 0;
+  }
+
+  .player__play {
+    grid-area: play;
+    width: 42px;
+    height: 42px;
+  }
+
+  .player__identity {
+    grid-area: identity;
+  }
+
+  .player__cc {
+    grid-area: cc;
+    margin-left: 0;
+    min-width: 42px;
+    padding: 8px 10px;
+  }
+
+  .player__quiz {
+    grid-area: quiz;
+    padding: 8px 12px;
+  }
+
+  .player__codec,
+  .player__kind,
+  .player__tags,
+  .player__time,
+  .player__dot,
+  .player__status {
+    display: none;
+  }
+
+  .player__name {
+    font-size: 14px;
+  }
+
+  .hud--legend {
+    bottom: calc(96px + env(safe-area-inset-bottom));
+  }
+
+  .legend__count {
+    display: none;
+  }
+
+  /* Sit above the legend so karaoke isn't crushed into the filter chip. */
+  .subtitles {
+    bottom: calc(186px + env(safe-area-inset-bottom));
   }
 }
 

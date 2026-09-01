@@ -56,6 +56,14 @@ export function useRadio(): Radio {
   if (audioRef.current === null && typeof Audio !== 'undefined') {
     const audio = new Audio();
     audio.preload = 'none';
+    // iOS otherwise treats HLS as a video and draws a floating station-name
+    // chip over the globe (the "Cope Granada" overlay in the corner).
+    audio.setAttribute('playsinline', 'true');
+    audio.setAttribute('webkit-playsinline', 'true');
+    audio.controls = false;
+    if ('disableRemotePlayback' in audio) {
+      (audio as HTMLMediaElement & { disableRemotePlayback: boolean }).disableRemotePlayback = true;
+    }
     // No crossOrigin: most icecast servers send no CORS headers, and plain
     // playback does not need them.
     audioRef.current = audio;

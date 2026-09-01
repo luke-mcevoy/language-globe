@@ -239,6 +239,7 @@ export function App() {
           getAudioElement={radio.getAudioElement}
           onPauseAudio={radio.pause}
           onResumeAudio={radio.resume}
+          scenesEnabled={health?.scenesEnabled ?? false}
         />
       )}
 

@@ -45,8 +45,17 @@ Captions and quizzes prefer models running on your machine and fall back to Open
 | Transcription + word timing | whisper.cpp (`whisper-server`, DTW alignment) | OpenAI Whisper |
 | Quiz generation | Ollama (`qwen2.5:7b-instruct`) | OpenAI chat model |
 | Word translation | Ollama (`qwen2.5:7b-instruct`) | OpenAI chat model |
+| Ambient scene art | SDXL-Turbo (`scene-server/`, local only) | — |
 
 With whisper.cpp and Ollama running, the whole experience — captions, karaoke, lookups, quizzes — works with **no API key and no per-use cost**.
+
+### Ambient scenes
+
+With captions on, the panel draws a stylized illustration of whatever the station is talking about, redrawn from the live transcript every ~45 s (Ollama writes the visual prompt, SDXL-Turbo paints it — a few seconds per image on Apple Silicon). It is entirely optional and turns on when the sidecar is running:
+
+```bash
+scene-server/run.sh   # first run creates a venv and downloads ~7 GB of weights
+```
 
 ## Setup
 

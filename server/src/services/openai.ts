@@ -146,6 +146,69 @@ export async function translateWord(word: string, context: string, language = co
   return translation;
 }
 
+export const SCENE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['prompt'],
+  properties: {
+    prompt: { type: 'string' },
+  },
+} as const;
+
+export function buildSceneDescriptionPrompt(transcript: string, language: string): string {
+  const languageName = language.charAt(0).toUpperCase() + language.slice(1);
+  return [
+    'You write prompts for an image generator that draws an ambient illustration of a live radio broadcast.',
+    `Below is a noisy automatic transcript of ${languageName} radio from the last minute or two.`,
+    '',
+    'Rules:',
+    '- "prompt": ONE English sentence (max ~35 words) describing a single vivid scene that captures what is being discussed.',
+    '- Style it as a stylized atmospheric illustration; end with: "stylized illustration, warm cinematic light, no text".',
+    '- Never name or depict a real, identifiable person. Describe roles or scenes instead ("a captain founding a colonial town", not a name).',
+    '- Ignore ads, station idents and garbled fragments; draw the main topic.',
+    '- If the transcript is mostly unusable, describe a cozy late-night radio studio instead.',
+    '',
+    'TRANSCRIPT:',
+    '"""',
+    transcript,
+    '"""',
+  ].join('\n');
+}
+
+export function parseSceneDescription(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const record = payload as { prompt?: unknown };
+  if (typeof record.prompt !== 'string') return null;
+  const prompt = record.prompt.trim();
+  return prompt.length >= 10 ? prompt : null;
+}
+
+export async function describeScene(transcript: string, language = config.targetLanguage): Promise<string> {
+  const completion = await getClient().chat.completions.create({
+    model: config.quizModel,
+    temperature: 0.6,
+    messages: [
+      { role: 'system', content: 'You write image-generation prompts and reply only with JSON matching the schema.' },
+      { role: 'user', content: buildSceneDescriptionPrompt(transcript, language) },
+    ],
+    response_format: {
+      type: 'json_schema',
+      json_schema: { name: 'scene_description', strict: true, schema: SCENE_SCHEMA },
+    },
+  });
+
+  const content = completion.choices[0]?.message?.content ?? '';
+  let payload: unknown;
+  try {
+    payload = JSON.parse(content);
+  } catch {
+    throw new Error('The scene model did not return valid JSON');
+  }
+  const prompt = parseSceneDescription(payload);
+  if (!prompt) throw new Error('The scene model returned no usable prompt');
+  return prompt;
+}
+
 export const QUESTION_SCHEMA = {
   type: 'object',
   additionalProperties: false,

@@ -15,10 +15,14 @@ import {
 import type { Difficulty, QuizQuestion } from '../types.js';
 import {
   buildQuizPrompt,
+  buildSceneDescriptionPrompt,
   buildTranslationPrompt,
+  describeScene as describeSceneOpenAi,
   generateQuestions as generateOpenAiQuestions,
+  parseSceneDescription,
   parseWordTranslation,
   QUESTION_SCHEMA,
+  SCENE_SCHEMA,
   TRANSLATION_SCHEMA,
   transcribeVerbose as transcribeVerboseOpenAi,
   translateWord as translateWordOpenAi,
@@ -481,6 +485,50 @@ export async function translateWord(word: string, context: string): Promise<Word
   }
   if (providerState.openaiAvailable) return translateWordOpenAi(word, context);
   throw new Error('No translation provider is available.');
+}
+
+async function describeSceneOllama(transcript: string): Promise<string> {
+  const response = await fetch(new URL('/api/chat', config.ollamaUrl), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: config.ollamaModel,
+      stream: false,
+      format: SCENE_SCHEMA,
+      options: { temperature: 0.6 },
+      messages: [
+        { role: 'system', content: 'You write image-generation prompts and reply only with JSON matching the schema.' },
+        { role: 'user', content: buildSceneDescriptionPrompt(transcript, config.targetLanguage) },
+      ],
+    }),
+  });
+  if (!response.ok) throw new Error(`Ollama responded ${response.status}`);
+
+  const payload = (await response.json()) as { message?: { content?: unknown } };
+  const content = typeof payload.message?.content === 'string' ? payload.message.content : '';
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error('Ollama did not return valid JSON');
+  }
+  const prompt = parseSceneDescription(parsed);
+  if (!prompt) throw new Error('Ollama returned no usable scene prompt');
+  return prompt;
+}
+
+/** Scene descriptions ride the quiz provider: same models, same fallback order. */
+export async function describeScene(transcript: string): Promise<string> {
+  const primary = providerState.quizProvider;
+  if (primary === 'ollama') {
+    try {
+      return await describeSceneOllama(transcript);
+    } catch (error) {
+      if (!providerState.openaiAvailable) throw error;
+    }
+  }
+  if (providerState.openaiAvailable) return describeSceneOpenAi(transcript);
+  throw new Error('No scene-description provider is available.');
 }
 
 export function shutdownProviders(): void {

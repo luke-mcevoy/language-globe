@@ -8,8 +8,11 @@ import type {
   HealthResponse,
   QuizStartResponse,
   QuizSubmitResponse,
+  SceneResponse,
   StationsResponse,
   StatsResponse,
+  VocabLookupResponse,
+  VocabResponse,
 } from '../types';
 
 export class ApiError extends Error {
@@ -84,6 +87,9 @@ export const pollCaptionSession = (
 export const stopCaptionSession = (sessionId: string): Promise<void> =>
   request<void>(`/api/captions/session/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
 
+export const captionSessionAudioUrl = (sessionId: string, delaySeconds: number): string =>
+  `${apiBaseUrl()}/api/captions/session/${encodeURIComponent(sessionId)}/audio?delay=${delaySeconds}`;
+
 export const startQuiz = (stationId: string, difficulty: Difficulty): Promise<QuizStartResponse> =>
   request<QuizStartResponse>('/api/quiz/start', {
     method: 'POST',
@@ -103,3 +109,21 @@ export const addFavorite = (stationId: string): Promise<Favorite> =>
 
 export const removeFavorite = (stationId: string): Promise<void> =>
   request<void>(`/api/favorites/${encodeURIComponent(stationId)}`, { method: 'DELETE' });
+
+export const lookupWord = (word: string, context: string, stationName: string): Promise<VocabLookupResponse> =>
+  request<VocabLookupResponse>('/api/vocab/lookup', {
+    method: 'POST',
+    body: JSON.stringify({ word, context, stationName }),
+  });
+
+export const getVocab = (): Promise<VocabResponse> => request<VocabResponse>('/api/vocab');
+
+export const removeVocabWord = (id: number): Promise<void> =>
+  request<void>(`/api/vocab/${id}`, { method: 'DELETE' });
+
+export const generateScene = (sessionId: string, signal?: AbortSignal): Promise<SceneResponse> =>
+  request<SceneResponse>('/api/scene', {
+    method: 'POST',
+    body: JSON.stringify({ sessionId }),
+    signal,
+  });

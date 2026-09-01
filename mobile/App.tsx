@@ -174,6 +174,11 @@ export default function App() {
         paused={quizOpen}
         chunkSeconds={health?.captionChunkSeconds ?? 15}
         onClose={() => setCaptionsOpen(false)}
+        onAudioUrlChange={radio.setAudioUrlOverride}
+        onPauseAudio={radio.pause}
+        onResumeAudio={radio.resume}
+        playback={radio.playback}
+        scenesEnabled={health?.scenesEnabled ?? false}
       />
 
       <PlayerBar

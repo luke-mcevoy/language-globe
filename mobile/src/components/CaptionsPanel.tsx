@@ -1,7 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { ApiError, pollCaptionSession, startCaptionSession, stopCaptionSession } from '../lib/api';
-import type { CaptionChunk, Station } from '../types';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ApiError,
+  captionSessionAudioUrl,
+  generateScene,
+  lookupWord,
+  pollCaptionSession,
+  startCaptionSession,
+  stopCaptionSession,
+} from '../lib/api';
+import { findActiveChunk, findActiveWordIndex, sessionTimeAt } from '../lib/captionSync';
+import type { CaptionChunk, Station, VocabEntry } from '../types';
 
 interface CaptionsPanelProps {
   station: Station | null;
@@ -10,22 +19,179 @@ interface CaptionsPanelProps {
   paused: boolean;
   chunkSeconds: number;
   onClose: () => void;
+  onAudioUrlChange: (url: string | null) => void;
+  onPauseAudio: () => void;
+  onResumeAudio: () => void;
+  playback: {
+    currentTime: number;
+    playing: boolean;
+    receivedAtMs: number;
+  };
+  /** True when the local image sidecar is running; shows the scene card. */
+  scenesEnabled: boolean;
 }
 
-export function CaptionsPanel({ chunkSeconds, enabled, onClose, paused, station, visible }: CaptionsPanelProps) {
+interface Scene {
+  src: string;
+  prompt: string;
+  key: number;
+}
+
+/** How often a fresh scene is drawn from the latest transcript. */
+const SCENE_INTERVAL_MS = 45_000;
+/** Cross-fade the new scene in over this many ms (mirrors web `scene-fade`). */
+const SCENE_FADE_MS = 1_400;
+/**
+ * First-generation on a cold sidecar can take ~45 s, so give the fetch a
+ * generous ceiling before we abort and retry on the next 5s tick.
+ */
+const SCENE_FETCH_TIMEOUT_MS = 90_000;
+
+interface KaraokeState {
+  chunkSeq: number | null;
+  wordIndex: number;
+}
+
+type FeedItem =
+  | { kind: 'chunk'; chunk: CaptionChunk }
+  | { kind: 'music'; seq: number; count: number };
+
+interface WordLookup {
+  word: string;
+  status: 'loading' | 'ready' | 'error';
+  entry?: VocabEntry;
+  message?: string;
+}
+
+const IDLE_KARAOKE: KaraokeState = { chunkSeq: null, wordIndex: -1 };
+const MUSIC_TEXT = '♪ music ♪';
+const SYNC_MARGIN_MS = 8_000;
+
+/** Strip surrounding punctuation: tapping "¡Sacude!" looks up "Sacude". */
+function cleanWord(raw: string): string {
+  return raw.replace(/^[\s\p{P}\p{S}]+/u, '').replace(/[\s\p{P}\p{S}]+$/u, '');
+}
+
+export function CaptionsPanel({
+  chunkSeconds,
+  enabled,
+  onAudioUrlChange,
+  onClose,
+  onPauseAudio,
+  onResumeAudio,
+  paused,
+  playback,
+  scenesEnabled,
+  station,
+  visible,
+}: CaptionsPanelProps) {
   const [chunks, setChunks] = useState<CaptionChunk[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [karaoke, setKaraoke] = useState<KaraokeState>(IDLE_KARAOKE);
+  const [syncReady, setSyncReady] = useState(false);
+  const [syncProgress, setSyncProgress] = useState(0);
+  const [bufferVersion, setBufferVersion] = useState(0);
+  const [lookup, setLookup] = useState<WordLookup | null>(null);
+  const [scene, setScene] = useState<Scene | null>(null);
+  const [prevScene, setPrevScene] = useState<Scene | null>(null);
+  const sceneRef = useRef<Scene | null>(null);
+  const sceneInflightRef = useRef(false);
+  const lastSceneAtRef = useRef(0);
+  const sceneFadeAnim = useRef(new Animated.Value(1)).current;
+  const bufferRef = useRef<{ bufferedMs: number; atMs: number } | null>(null);
+  const sessionStartRef = useRef<number | null>(null);
   const scrollRef = useRef<ScrollView | null>(null);
+  const delaySeconds = chunkSeconds + 5;
+  const stationName = station?.name ?? '';
 
   useEffect(() => {
     setChunks([]);
     setError(null);
+    setSessionId(null);
+    setKaraoke(IDLE_KARAOKE);
+    setSyncReady(false);
+    setSyncProgress(0);
+    setLookup(null);
+    setScene(null);
+    setPrevScene(null);
+    sceneRef.current = null;
+    lastSceneAtRef.current = 0;
+    bufferRef.current = null;
+    sessionStartRef.current = null;
   }, [station?.id]);
+
+  // Ambient scene art: redraw from the freshest transcript every ~45s. First
+  // request fires as soon as the session exists; the server falls back to a
+  // station-vibe prompt while there is no spoken text yet. The sidecar can be
+  // slow to warm up so failures just fall through to the next tick.
+  useEffect(() => {
+    if (!scenesEnabled || !sessionId) return;
+    let cancelled = false;
+    let currentController: AbortController | null = null;
+
+    const tick = async () => {
+      if (cancelled || sceneInflightRef.current) return;
+      if (Date.now() - lastSceneAtRef.current < SCENE_INTERVAL_MS && sceneRef.current) return;
+      sceneInflightRef.current = true;
+      const controller = new AbortController();
+      currentController = controller;
+      const timer = setTimeout(() => controller.abort(), SCENE_FETCH_TIMEOUT_MS);
+      try {
+        const response = await generateScene(sessionId, controller.signal);
+        if (cancelled) return;
+        lastSceneAtRef.current = Date.now();
+        const next: Scene = { src: response.image, prompt: response.prompt, key: Date.now() };
+        setPrevScene(sceneRef.current);
+        setScene(next);
+        sceneRef.current = next;
+      } catch {
+        // Sidecar busy or warming up; next tick retries.
+      } finally {
+        clearTimeout(timer);
+        sceneInflightRef.current = false;
+        if (currentController === controller) currentController = null;
+      }
+    };
+
+    void tick();
+    const interval = setInterval(() => void tick(), 5_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      currentController?.abort();
+    };
+  }, [scenesEnabled, sessionId]);
+
+  // Cross-fade a new scene over the previous one. Reset opacity to 0 on each
+  // new key and animate up to 1; drop the previous image once the fade lands.
+  useEffect(() => {
+    if (!scene) return;
+    sceneFadeAnim.setValue(0);
+    const anim = Animated.timing(sceneFadeAnim, {
+      toValue: 1,
+      duration: SCENE_FADE_MS,
+      useNativeDriver: true,
+    });
+    anim.start(({ finished }) => {
+      if (finished) setPrevScene(null);
+    });
+    return () => {
+      anim.stop();
+    };
+  }, [scene?.key, sceneFadeAnim]);
 
   useEffect(() => {
     if (!visible || !enabled || paused || !station) {
       setPending(false);
+      setSessionId(null);
+      setKaraoke(IDLE_KARAOKE);
+      setSyncReady(false);
+      setSyncProgress(0);
+      bufferRef.current = null;
+      sessionStartRef.current = null;
+      onAudioUrlChange(null);
       return;
     }
 
@@ -46,6 +212,11 @@ export function CaptionsPanel({ chunkSeconds, enabled, onClose, paused, station,
           void stopCaptionSession(created.sessionId).catch(() => undefined);
           return;
         }
+        setSessionId(created.sessionId);
+        setSyncReady(false);
+        setSyncProgress(0);
+        bufferRef.current = null;
+        sessionStartRef.current = Date.now();
         setError(null);
 
         let after = 0;
@@ -53,6 +224,10 @@ export function CaptionsPanel({ chunkSeconds, enabled, onClose, paused, station,
           controller = new AbortController();
           const response = await pollCaptionSession(created.sessionId, after, controller.signal);
           if (cancelled) return;
+          if (typeof response.audioBufferedMs === 'number') {
+            bufferRef.current = { bufferedMs: response.audioBufferedMs, atMs: Date.now() };
+            setBufferVersion((version) => version + 1);
+          }
           if (response.chunks.length > 0) {
             after = response.chunks[response.chunks.length - 1]?.seq ?? after;
             setError(null);
@@ -71,13 +246,134 @@ export function CaptionsPanel({ chunkSeconds, enabled, onClose, paused, station,
     return () => {
       cancelled = true;
       controller?.abort();
+      onAudioUrlChange(null);
       if (session) void stopCaptionSession(session).catch(() => undefined);
     };
-  }, [enabled, paused, station, visible]);
+  }, [enabled, onAudioUrlChange, paused, station, visible]);
+
+  useEffect(() => {
+    if (syncReady || !sessionId) return;
+    const buffer = bufferRef.current;
+    if (!buffer) return;
+    const bufferedNow = buffer.bufferedMs + (Date.now() - buffer.atMs);
+    const remainingMs = delaySeconds * 1000 + SYNC_MARGIN_MS - bufferedNow;
+    if (remainingMs <= 0) {
+      setSyncReady(true);
+      return;
+    }
+    const timer = setTimeout(() => setSyncReady(true), remainingMs);
+    return () => clearTimeout(timer);
+  }, [bufferVersion, delaySeconds, sessionId, syncReady]);
+
+  useEffect(() => {
+    if (!sessionId || syncReady) return;
+    const targetMs = delaySeconds * 1000 + SYNC_MARGIN_MS;
+    const timer = setInterval(() => {
+      const buffer = bufferRef.current;
+      const bufferedNow = buffer
+        ? buffer.bufferedMs + (Date.now() - buffer.atMs)
+        : sessionStartRef.current !== null
+          ? Math.max(0, Date.now() - sessionStartRef.current - 3_000)
+          : 0;
+      setSyncProgress(Math.min(1, bufferedNow / targetMs));
+    }, 250);
+    return () => clearInterval(timer);
+  }, [delaySeconds, sessionId, syncReady]);
+
+  useEffect(() => {
+    if (!sessionId || paused || !visible || !syncReady) {
+      onAudioUrlChange(null);
+      return;
+    }
+    onAudioUrlChange(captionSessionAudioUrl(sessionId, delaySeconds));
+    return () => onAudioUrlChange(null);
+  }, [delaySeconds, onAudioUrlChange, paused, sessionId, syncReady, visible]);
+
+  useEffect(() => {
+    if (!sessionId || paused || !visible || !syncReady) {
+      setKaraoke(IDLE_KARAOKE);
+      return;
+    }
+    const timer = setInterval(() => {
+      const elapsedSinceStatusSeconds = playback.playing ? Math.min(Date.now() - playback.receivedAtMs, 600) / 1000 : 0;
+      const sessionMs = sessionTimeAt(playback.currentTime + elapsedSinceStatusSeconds);
+      const chunk = findActiveChunk(chunks, sessionMs);
+      if (chunk?.words && chunk.words.length > 0) {
+        const idx = findActiveWordIndex(chunk.words, sessionMs);
+        setKaraoke((previous) =>
+          previous.chunkSeq === chunk.seq && previous.wordIndex === idx ? previous : { chunkSeq: chunk.seq, wordIndex: idx },
+        );
+      } else if (chunk) {
+        setKaraoke((previous) =>
+          previous.chunkSeq === chunk.seq && previous.wordIndex === -1
+            ? previous
+            : { chunkSeq: chunk.seq, wordIndex: -1 },
+        );
+      } else {
+        setKaraoke((previous) => (previous.chunkSeq === null && previous.wordIndex === -1 ? previous : IDLE_KARAOKE));
+      }
+    }, 150);
+    return () => clearInterval(timer);
+  }, [chunks, paused, playback.currentTime, playback.playing, playback.receivedAtMs, sessionId, syncReady, visible]);
+
+  const handleWordTap = useCallback(
+    (raw: string, context: string) => {
+      const word = cleanWord(raw);
+      if (word.length === 0) return;
+      onPauseAudio();
+      setLookup({ word, status: 'loading' });
+      lookupWord(word, context, stationName)
+        .then((response) =>
+          setLookup((current) =>
+            current?.word === word ? { ...current, status: 'ready', entry: response.entry } : current,
+          ),
+        )
+        .catch((err: unknown) =>
+          setLookup((current) =>
+            current?.word === word
+              ? {
+                  ...current,
+                  status: 'error',
+                  message: err instanceof ApiError ? err.message : 'Translation failed. Try again.',
+                }
+              : current,
+          ),
+        );
+    },
+    [onPauseAudio, stationName],
+  );
+
+  const closeLookup = useCallback(
+    (resume: boolean) => {
+      setLookup(null);
+      if (resume) onResumeAudio();
+    },
+    [onResumeAudio],
+  );
+
+  const feedItems = useMemo(() => {
+    const items: FeedItem[] = [];
+    for (const chunk of chunks) {
+      const last = items[items.length - 1];
+      if (chunk.text === MUSIC_TEXT) {
+        if (last?.kind === 'music') {
+          last.count += 1;
+          last.seq = chunk.seq;
+        } else {
+          items.push({ kind: 'music', seq: chunk.seq, count: 1 });
+        }
+      } else {
+        items.push({ kind: 'chunk', chunk });
+      }
+    }
+    return items;
+  }, [chunks]);
+  const wordCount = chunks.reduce((total, chunk) => total + chunk.text.split(/\s+/).filter(Boolean).length, 0);
+  const activeChunkSeq = karaoke.chunkSeq;
+  const activeWordIndex = karaoke.wordIndex;
+  const status = syncReady ? `karaoke · audio ${delaySeconds}s behind live` : 'syncing audio to captions';
 
   if (!visible || !station) return null;
-
-  const wordCount = chunks.reduce((total, chunk) => total + chunk.text.split(/\s+/).filter(Boolean).length, 0);
 
   return (
     <View style={styles.panel}>
@@ -92,6 +388,38 @@ export function CaptionsPanel({ chunkSeconds, enabled, onClose, paused, station,
           <Text style={styles.closeText}>×</Text>
         </Pressable>
       </View>
+      {scene && (
+        <View style={styles.sceneCard}>
+          {prevScene && (
+            <Image
+              key={prevScene.key}
+              source={{ uri: prevScene.src }}
+              style={styles.sceneImage}
+              accessible={false}
+            />
+          )}
+          <Animated.Image
+            key={scene.key}
+            source={{ uri: scene.src }}
+            style={[styles.sceneImage, { opacity: sceneFadeAnim }]}
+            accessibilityLabel={scene.prompt}
+          />
+          <View style={styles.scenePromptOverlay} pointerEvents="none">
+            <Text style={styles.scenePromptText} numberOfLines={2}>
+              {scene.prompt}
+            </Text>
+          </View>
+        </View>
+      )}
+      {!syncReady && !error && (
+        <View style={styles.syncRow}>
+          <Text style={styles.syncText}>Syncing audio</Text>
+          <View style={styles.syncTrack}>
+            <View style={[styles.syncFill, { width: `${Math.round(syncProgress * 100)}%` }]} />
+          </View>
+          <Text style={styles.syncPercent}>{Math.round(syncProgress * 100)}%</Text>
+        </View>
+      )}
       <ScrollView
         ref={scrollRef}
         style={styles.feed}
@@ -99,30 +427,94 @@ export function CaptionsPanel({ chunkSeconds, enabled, onClose, paused, station,
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
       >
         {chunks.length === 0 && !pending && !paused && !error && (
-          <Text style={styles.empty}>Waiting for the next spoken chunk...</Text>
+          <Text style={styles.empty}>Listening for speech...</Text>
         )}
-        {chunks.map((chunk, index) => (
-          <Text
-            key={chunk.seq}
-            style={[
-              styles.chunk,
-              index === chunks.length - 1 && styles.latest,
-              chunk.text.includes('music') && styles.music,
-            ]}
-          >
-            {chunk.text}
-          </Text>
-        ))}
+        {feedItems.map((item, index) => {
+          if (item.kind === 'music') {
+            return (
+              <Text key={`music-${item.seq}`} style={styles.music}>
+                {MUSIC_TEXT}
+              </Text>
+            );
+          }
+          const isLatest = index === feedItems.length - 1;
+          const isPlaying = item.chunk.seq === activeChunkSeq;
+          return (
+            <Text key={item.chunk.seq} style={[styles.chunk, isLatest && styles.latest, isPlaying && styles.playingChunk]}>
+              {renderChunkBody(item.chunk, isPlaying, isPlaying ? activeWordIndex : -1, handleWordTap)}
+            </Text>
+          );
+        })}
         {paused && <Text style={styles.paused}>Paused while the quiz captures this station.</Text>}
         {error && <Text style={styles.error}>{error}</Text>}
         {pending && <Text style={styles.pending}>...</Text>}
       </ScrollView>
+      {lookup && (
+        <View style={styles.lookupSheet}>
+          <Text style={styles.lookupWord}>{lookup.word}</Text>
+          {lookup.status === 'loading' && <Text style={styles.lookupMuted}>translating…</Text>}
+          {lookup.status === 'error' && <Text style={styles.lookupErrorText}>{lookup.message}</Text>}
+          {lookup.status === 'ready' && lookup.entry && (
+            <>
+              <Text style={styles.lookupTranslation}>{lookup.entry.translation}</Text>
+              {lookup.entry.note ? <Text style={styles.lookupNote}>{lookup.entry.note}</Text> : null}
+              <Text style={styles.lookupSaved}>
+                ✓ Saved to your vocab
+                {lookup.entry.timesLookedUp > 1 ? ` · looked up ${lookup.entry.timesLookedUp}×` : ''}
+              </Text>
+            </>
+          )}
+          <View style={styles.lookupActions}>
+            <Pressable style={[styles.lookupButton, styles.lookupResume]} onPress={() => closeLookup(true)}>
+              <Text style={styles.lookupResumeText}>▶ Resume</Text>
+            </Pressable>
+            <Pressable style={styles.lookupButton} onPress={() => closeLookup(false)}>
+              <Text style={styles.lookupCloseText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
       <View style={styles.footer}>
         <Text style={styles.footerText}>{wordCount} words</Text>
-        <Text style={styles.footerText}>session polling · ~{chunkSeconds}s capture windows</Text>
+        <Text style={[styles.footerText, syncReady && styles.footerLive]}>{status}</Text>
       </View>
     </View>
   );
+}
+
+type WordTapHandler = (raw: string, context: string) => void;
+
+function renderChunkBody(
+  chunk: CaptionChunk,
+  isCurrentChunk: boolean,
+  activeWordIndex: number,
+  onWord: WordTapHandler,
+) {
+  const words = chunk.words;
+  if (isCurrentChunk && words && words.length > 0) {
+    return words.map((word, index) => {
+      const stateStyle =
+        index < activeWordIndex ? styles.wordPast : index === activeWordIndex ? styles.wordCurrent : styles.wordFuture;
+      return (
+        <Text key={`${chunk.seq}-${index}`}>
+          <Text style={[styles.word, stateStyle]} onPress={() => onWord(word.word, chunk.text)}>
+            {word.word}
+          </Text>
+          {index < words.length - 1 ? ' ' : ''}
+        </Text>
+      );
+    });
+  }
+  // Non-karaoke chunks: split plain text on whitespace so each token stays
+  // tappable for lookup even without word-level timing.
+  return chunk.text.split(/(\s+)/).map((token, index) => {
+    if (!/\S/.test(token)) return token;
+    return (
+      <Text key={`${chunk.seq}-${index}`} onPress={() => onWord(token, chunk.text)}>
+        {token}
+      </Text>
+    );
+  });
 }
 
 const styles = StyleSheet.create({
@@ -131,7 +523,7 @@ const styles = StyleSheet.create({
     left: 14,
     right: 14,
     bottom: 168,
-    maxHeight: 300,
+    maxHeight: 380,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.14)',
     backgroundColor: 'rgba(9, 14, 29, 0.92)',
@@ -181,6 +573,76 @@ const styles = StyleSheet.create({
     fontSize: 22,
     lineHeight: 24,
   },
+  sceneCard: {
+    marginHorizontal: 14,
+    marginTop: 12,
+    marginBottom: 4,
+    aspectRatio: 3 / 2,
+    borderRadius: 10,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: '#060a15',
+  },
+  sceneImage: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+  },
+  scenePromptOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 12,
+    paddingTop: 18,
+    paddingBottom: 8,
+    // RN has no CSS gradients built in; a solid dark tint anchored to the
+    // bottom approximates web's `linear-gradient(to top, rgba(4,7,14,.88), transparent)`.
+    backgroundColor: 'rgba(4, 7, 14, 0.78)',
+  },
+  scenePromptText: {
+    color: 'rgba(234, 240, 255, 0.78)',
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  syncRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.09)',
+  },
+  syncText: {
+    color: '#d7dff2',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  syncTrack: {
+    flex: 1,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    overflow: 'hidden',
+  },
+  syncFill: {
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#54e6c3',
+  },
+  syncPercent: {
+    width: 34,
+    textAlign: 'right',
+    color: '#7f8ba6',
+    fontSize: 12,
+    fontWeight: '800',
+  },
   feed: {
     minHeight: 136,
   },
@@ -201,9 +663,32 @@ const styles = StyleSheet.create({
     color: '#f7fbff',
     fontSize: 16,
   },
+  playingChunk: {
+    color: '#d7dff2',
+  },
   music: {
     color: '#7f8ba6',
     fontStyle: 'italic',
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 10,
+  },
+  word: {
+    fontSize: 16,
+    lineHeight: 24,
+  },
+  wordPast: {
+    color: '#7f8ba6',
+  },
+  wordFuture: {
+    color: '#d7dff2',
+  },
+  wordCurrent: {
+    color: '#052019',
+    backgroundColor: '#54e6c3',
+    borderRadius: 5,
+    overflow: 'hidden',
+    fontWeight: '900',
   },
   paused: {
     color: '#ffe59d',
@@ -218,6 +703,71 @@ const styles = StyleSheet.create({
     fontSize: 20,
     lineHeight: 22,
   },
+  lookupSheet: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: 'rgba(5, 32, 25, 0.55)',
+    gap: 6,
+  },
+  lookupWord: {
+    color: '#54e6c3',
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  lookupMuted: {
+    color: '#7f8ba6',
+    fontSize: 13,
+    fontStyle: 'italic',
+  },
+  lookupErrorText: {
+    color: '#ff9aac',
+    fontSize: 13,
+  },
+  lookupTranslation: {
+    color: '#f7fbff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  lookupNote: {
+    color: '#aebbd5',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  lookupSaved: {
+    color: '#54e6c3',
+    fontSize: 11,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  lookupActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  lookupButton: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.13)',
+  },
+  lookupResume: {
+    backgroundColor: '#54e6c3',
+    borderColor: '#54e6c3',
+  },
+  lookupResumeText: {
+    color: '#052019',
+    fontWeight: '900',
+  },
+  lookupCloseText: {
+    color: '#dbe7ff',
+    fontWeight: '800',
+  },
   footer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -230,5 +780,8 @@ const styles = StyleSheet.create({
   footerText: {
     color: '#7f8ba6',
     fontSize: 11,
+  },
+  footerLive: {
+    color: '#54e6c3',
   },
 });

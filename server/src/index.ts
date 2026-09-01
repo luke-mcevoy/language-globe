@@ -8,8 +8,10 @@ import { registerCaptionRoutes } from './routes/captions.js';
 import { registerFavoriteRoutes } from './routes/favorites.js';
 import { registerQuizRoutes } from './routes/quiz.js';
 import { registerStationRoutes } from './routes/stations.js';
+import { registerSceneRoutes } from './routes/scene.js';
 import { registerStatsRoutes } from './routes/stats.js';
 import { registerVocabRoutes } from './routes/vocab.js';
+import { sceneServerAvailable } from './services/scenes.js';
 import { ffmpegAvailable, sweepTmpDir } from './services/capture.js';
 import {
   captionsEnabled,
@@ -46,6 +48,7 @@ app.get('/api/health', async (): Promise<HealthResponse> => ({
   transcribeProvider: getProviderStatus().transcribeProvider,
   quizProvider: getProviderStatus().quizProvider,
   ffmpegAvailable: await ffmpegAvailable(),
+  scenesEnabled: await sceneServerAvailable(),
 }));
 
 await registerStationRoutes(app);
@@ -54,6 +57,7 @@ await registerQuizRoutes(app);
 await registerStatsRoutes(app);
 await registerFavoriteRoutes(app);
 await registerVocabRoutes(app);
+await registerSceneRoutes(app);
 
 // Serve the built web app when it is present (the Docker image copies it to
 // ../frontend/dist), so one container serves both the API and the UI. In dev

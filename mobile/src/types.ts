@@ -144,6 +144,8 @@ export interface HealthResponse {
   transcribeProvider: string;
   quizProvider: string;
   ffmpegAvailable: boolean;
+  /** True when the local SDXL-Turbo sidecar is reachable. */
+  scenesEnabled: boolean;
 }
 
 export interface Favorite {
@@ -154,4 +156,36 @@ export interface Favorite {
 
 export interface FavoritesResponse {
   favorites: Favorite[];
+}
+
+/** One word the user looked up from the captions ("words I didn't know"). */
+export interface VocabEntry {
+  id: number;
+  word: string;
+  translation: string;
+  note: string;
+  context: string;
+  stationName: string;
+  timesLookedUp: number;
+  createdAt: string;
+  lastLookedUpAt: string;
+}
+
+export interface VocabResponse {
+  words: VocabEntry[];
+}
+
+export interface VocabLookupResponse {
+  entry: VocabEntry;
+}
+
+/** An AI-drawn ambient illustration of what the station is broadcasting. */
+export interface SceneResponse {
+  /** PNG as a data URL, ready for an <Image source={{ uri }}>. */
+  image: string;
+  /** The exact prompt the image model received (provenance for the UI). */
+  prompt: string;
+  basedOn: 'transcript' | 'station';
+  /** Generation time reported by the sidecar. */
+  seconds: number;
 }

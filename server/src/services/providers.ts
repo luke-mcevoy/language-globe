@@ -103,9 +103,24 @@ async function probeOllama(): Promise<boolean> {
   }
 }
 
+async function probeExternalWhisperServer(): Promise<boolean> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2000);
+  try {
+    const response = await fetch(config.whisperServerUrl, { signal: controller.signal });
+    return response.ok || response.status === 404 || response.status === 405;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function initializeProviders(): Promise<ProviderState> {
   const whisperModelAvailable = fs.existsSync(config.whisperModelPath);
-  const whisperServerAvailable = whisperModelAvailable && fs.existsSync(config.whisperServerBin);
+  const whisperServerAvailable = config.whisperServerExternal
+    ? await probeExternalWhisperServer()
+    : whisperModelAvailable && fs.existsSync(config.whisperServerBin);
   const whisperCliAvailable = whisperModelAvailable && (await commandExists(config.whisperCliBin));
   const probes: ProviderProbeState = {
     localWhisperAvailable: whisperServerAvailable || whisperCliAvailable,
@@ -193,6 +208,8 @@ async function waitForWhisperServer(): Promise<void> {
 
 async function ensureWhisperServer(): Promise<void> {
   if (!providerState.whisperServerAvailable) throw new Error('whisper-server is unavailable');
+  // Externally managed server (e.g. native on the Docker host): never spawn.
+  if (config.whisperServerExternal) return;
   if (whisperServer && !whisperServer.killed && whisperServer.exitCode === null) return whisperServerReady ?? Promise.resolve();
 
   const language = targetLanguageCode(config.targetLanguage) ?? config.targetLanguage;

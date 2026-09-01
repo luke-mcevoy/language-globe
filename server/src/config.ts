@@ -25,6 +25,12 @@ export const config = {
   whisperServerBin: process.env.WHISPER_SERVER_BIN ?? '/opt/homebrew/bin/whisper-server',
   whisperCliBin: process.env.WHISPER_CLI_BIN ?? 'whisper-cli',
   whisperServerUrl: process.env.WHISPER_SERVER_URL ?? 'http://127.0.0.1:8788',
+  /**
+   * When WHISPER_SERVER_URL is set explicitly, the server is externally
+   * managed (e.g. running natively on the Docker host for Metal speed):
+   * don't spawn a binary, don't require a local model file — just use it.
+   */
+  whisperServerExternal: (process.env.WHISPER_SERVER_URL ?? '').length > 0,
   whisperServerHost: process.env.WHISPER_SERVER_HOST ?? '127.0.0.1',
   whisperServerPort: num(process.env.WHISPER_SERVER_PORT, 8788),
   /**

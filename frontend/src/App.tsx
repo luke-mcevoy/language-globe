@@ -19,7 +19,14 @@ import { useFriendsListening } from './hooks/useFriendsListening';
 import { usePresence } from './hooks/usePresence';
 import { useRadio } from './hooks/useRadio';
 import { titleCase } from './lib/format';
-import type { HealthResponse, Station, StatsResponse } from './types';
+import type { HealthResponse, Station, StationKind, StatsResponse } from './types';
+
+const ALL_KINDS: StationKind[] = ['talk', 'music', 'unknown'];
+const KIND_LABELS: Record<StationKind, string> = {
+  talk: 'talk / news',
+  music: 'music',
+  unknown: 'unlabelled',
+};
 
 type Loadable<T> = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; data: T };
 
@@ -35,6 +42,8 @@ export function App() {
   const [friendsOpen, setFriendsOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [globeReady, setGlobeReady] = useState(false);
+  // Empty set = no filter (all kinds shown).
+  const [kindFilter, setKindFilter] = useState<Set<StationKind>>(new Set());
   const radio = useRadio();
   const auth = useAuth();
   const favorites = useFavorites(Boolean(auth.user));
@@ -83,6 +92,28 @@ export function App() {
 
   const stationList = stations.status === 'ready' ? stations.data : [];
 
+  const toggleKind = useCallback((kind: StationKind) => {
+    setKindFilter((previous) => {
+      const next = new Set(previous);
+      if (next.size === 0) {
+        // No filter active: first click solos that kind.
+        next.add(kind);
+      } else if (next.has(kind)) {
+        next.delete(kind);
+      } else {
+        next.add(kind);
+      }
+      // Selecting everything is the same as no filter.
+      if (next.size === ALL_KINDS.length) next.clear();
+      return next;
+    });
+  }, []);
+
+  const visibleStations = useMemo(
+    () => (kindFilter.size === 0 ? stationList : stationList.filter((station) => kindFilter.has(station.kind))),
+    [kindFilter, stationList],
+  );
+
   const visitedCountries = useMemo(
     () => new Set(stats.status === 'ready' ? stats.data.countries.map((country) => country.countryCode) : []),
     [stats],
@@ -101,21 +132,24 @@ export function App() {
    * toward talk radio, which is what the quiz actually works on.
    */
   const surpriseMe = useCallback(() => {
-    if (stationList.length === 0) return;
+    if (visibleStations.length === 0) return;
 
-    const alive = stationList.filter(
+    const alive = visibleStations.filter(
       (station) => station.reachable && !radio.deadStations.has(station.id) && station.id !== selected?.id,
     );
-    const pool = alive.length > 0 ? alive : stationList;
+    const pool = alive.length > 0 ? alive : visibleStations;
 
     const unvisited = pool.filter((station) => !visitedCountries.has(station.countryCode));
     const preferred = unvisited.length > 0 ? unvisited : pool;
-    const talk = preferred.filter((station) => station.kind === 'talk');
+    // Bias toward talk radio (what the quiz works on) unless the user has
+    // deliberately filtered talk out.
+    const wantTalk = kindFilter.size === 0 || kindFilter.has('talk');
+    const talk = wantTalk ? preferred.filter((station) => station.kind === 'talk') : [];
     const finalPool = talk.length > 0 ? talk : preferred;
 
     const pick = finalPool[Math.floor(Math.random() * finalPool.length)];
     if (pick) tune(pick);
-  }, [radio.deadStations, selected, stationList, tune, visitedCountries]);
+  }, [kindFilter, radio.deadStations, selected, tune, visibleStations, visitedCountries]);
 
   // Space toggles playback, as long as the user is not typing in a control.
   useEffect(() => {
@@ -172,7 +206,7 @@ export function App() {
   return (
     <div className="app">
       <GlobeView
-        stations={stationList}
+        stations={visibleStations}
         selected={selected}
         playing={radio.station}
         deadStations={radio.deadStations}
@@ -190,7 +224,9 @@ export function App() {
             <p className="brand__subtitle">
               {titleCase(targetLanguage)} radio ·{' '}
               {stations.status === 'ready'
-                ? `${stationList.length.toLocaleString()} stations`
+                ? kindFilter.size === 0
+                  ? `${stationList.length.toLocaleString()} stations`
+                  : `${visibleStations.length.toLocaleString()} of ${stationList.length.toLocaleString()} stations`
                 : stations.status === 'loading'
                   ? 'finding stations…'
                   : 'stations unavailable'}
@@ -258,16 +294,29 @@ export function App() {
       </header>
 
       <div className="hud hud--legend">
-        <div className="legend glass">
-          <span className="legend__item">
-            <i style={{ background: KIND_COLORS.talk }} /> talk / news
-          </span>
-          <span className="legend__item">
-            <i style={{ background: KIND_COLORS.music }} /> music
-          </span>
-          <span className="legend__item">
-            <i style={{ background: KIND_COLORS.unknown }} /> unlabelled
-          </span>
+        <div className="legend glass" role="group" aria-label="Filter stations by kind">
+          {ALL_KINDS.map((kind) => {
+            const active = kindFilter.size === 0 || kindFilter.has(kind);
+            const count = stationList.filter((station) => station.kind === kind).length;
+            return (
+              <button
+                key={kind}
+                type="button"
+                className={`legend__item${active ? '' : ' legend__item--off'}`}
+                aria-pressed={active}
+                title={`Click to filter · ${count.toLocaleString()} stations`}
+                onClick={() => toggleKind(kind)}
+              >
+                <i style={{ background: KIND_COLORS[kind] }} /> {KIND_LABELS[kind]}
+                <span className="legend__count">{count.toLocaleString()}</span>
+              </button>
+            );
+          })}
+          {kindFilter.size > 0 && (
+            <button type="button" className="legend__clear" onClick={() => setKindFilter(new Set())}>
+              show all
+            </button>
+          )}
         </div>
       </div>
 

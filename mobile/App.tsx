@@ -11,9 +11,16 @@ import { QuizPanel } from './src/components/QuizPanel';
 import { StatsPanel } from './src/components/StatsPanel';
 import { useFavorites } from './src/hooks/useFavorites';
 import { useRadio } from './src/hooks/useRadio';
-import type { HealthResponse, Station, StatsResponse } from './src/types';
+import type { HealthResponse, Station, StationKind, StatsResponse } from './src/types';
 
 type Loadable<T> = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; data: T };
+
+const ALL_KINDS: StationKind[] = ['talk', 'music', 'unknown'];
+const KIND_LABELS: Record<StationKind, string> = {
+  talk: 'talk',
+  music: 'music',
+  unknown: 'unlabelled',
+};
 
 export default function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -25,6 +32,8 @@ export default function App() {
   const [statsOpen, setStatsOpen] = useState(false);
   const [favoritesOpen, setFavoritesOpen] = useState(false);
   const [globeReady, setGlobeReady] = useState(false);
+  // Empty set = no filter (all kinds shown).
+  const [kindFilter, setKindFilter] = useState<Set<StationKind>>(new Set());
   const radio = useRadio();
   const favorites = useFavorites();
 
@@ -64,6 +73,28 @@ export default function App() {
   const stationList = stations.status === 'ready' ? stations.data : [];
   const targetLanguage = health?.targetLanguage ?? 'spanish';
 
+  const toggleKind = useCallback((kind: StationKind) => {
+    setKindFilter((previous) => {
+      const next = new Set(previous);
+      if (next.size === 0) {
+        // No filter active: first tap solos that kind.
+        next.add(kind);
+      } else if (next.has(kind)) {
+        next.delete(kind);
+      } else {
+        next.add(kind);
+      }
+      // Selecting everything is the same as no filter.
+      if (next.size === ALL_KINDS.length) next.clear();
+      return next;
+    });
+  }, []);
+
+  const visibleStations = useMemo(
+    () => (kindFilter.size === 0 ? stationList : stationList.filter((station) => kindFilter.has(station.kind))),
+    [kindFilter, stationList],
+  );
+
   const visitedCountries = useMemo(
     () => new Set(stats.status === 'ready' ? stats.data.countries.map((country) => country.countryCode) : []),
     [stats],
@@ -78,18 +109,20 @@ export default function App() {
   );
 
   const surpriseMe = useCallback(() => {
-    if (stationList.length === 0) return;
-    const alive = stationList.filter(
+    if (visibleStations.length === 0) return;
+    const alive = visibleStations.filter(
       (station) => station.reachable && !radio.deadStations.has(station.id) && station.id !== selected?.id,
     );
-    const pool = alive.length > 0 ? alive : stationList;
+    const pool = alive.length > 0 ? alive : visibleStations;
     const unvisited = pool.filter((station) => !visitedCountries.has(station.countryCode));
     const preferred = unvisited.length > 0 ? unvisited : pool;
-    const talk = preferred.filter((station) => station.kind === 'talk');
+    // Bias toward talk radio unless the user filtered talk out.
+    const wantTalk = kindFilter.size === 0 || kindFilter.has('talk');
+    const talk = wantTalk ? preferred.filter((station) => station.kind === 'talk') : [];
     const finalPool = talk.length > 0 ? talk : preferred;
     const pick = finalPool[Math.floor(Math.random() * finalPool.length)];
     if (pick) tune(pick);
-  }, [radio.deadStations, selected, stationList, tune, visitedCountries]);
+  }, [kindFilter, radio.deadStations, selected, tune, visibleStations, visitedCountries]);
 
   const openStats = useCallback(() => {
     setStatsOpen(true);
@@ -102,7 +135,7 @@ export default function App() {
     <View style={styles.app}>
       <StatusBar style="light" />
       <GlobeView
-        stations={stationList}
+        stations={visibleStations}
         selected={selected}
         playing={radio.station}
         deadStations={radio.deadStations}
@@ -120,7 +153,9 @@ export default function App() {
               <Text style={styles.brandSubtitle}>
                 {titleCase(targetLanguage)} radio ·{' '}
                 {stations.status === 'ready'
-                  ? `${stationList.length.toLocaleString()} stations`
+                  ? kindFilter.size === 0
+                    ? `${stationList.length.toLocaleString()} stations`
+                    : `${visibleStations.length.toLocaleString()} of ${stationList.length.toLocaleString()} stations`
                   : stations.status === 'loading'
                     ? 'finding stations...'
                     : 'stations unavailable'}
@@ -144,9 +179,20 @@ export default function App() {
         </View>
 
         <View style={styles.legend}>
-          <LegendDot color={KIND_COLORS.talk} label="talk" />
-          <LegendDot color={KIND_COLORS.music} label="music" />
-          <LegendDot color={KIND_COLORS.unknown} label="unlabelled" />
+          {ALL_KINDS.map((kind) => (
+            <LegendDot
+              key={kind}
+              color={KIND_COLORS[kind]}
+              label={KIND_LABELS[kind]}
+              active={kindFilter.size === 0 || kindFilter.has(kind)}
+              onPress={() => toggleKind(kind)}
+            />
+          ))}
+          {kindFilter.size > 0 && (
+            <Pressable onPress={() => setKindFilter(new Set())}>
+              <Text style={styles.legendClear}>show all</Text>
+            </Pressable>
+          )}
         </View>
 
         {health && !health.captionsEnabled && (
@@ -246,12 +292,27 @@ export default function App() {
   );
 }
 
-function LegendDot({ color, label }: { color: string; label: string }) {
+function LegendDot({
+  color,
+  label,
+  active,
+  onPress,
+}: {
+  color: string;
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
   return (
-    <View style={styles.legendItem}>
-      <View style={[styles.legendDot, { backgroundColor: color }]} />
+    <Pressable style={[styles.legendItem, !active && styles.legendItemOff]} onPress={onPress} hitSlop={6}>
+      <View
+        style={[
+          styles.legendDot,
+          active ? { backgroundColor: color } : [styles.legendDotOff, { borderColor: color }],
+        ]}
+      />
       <Text style={styles.legendText}>{label}</Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -338,14 +399,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 7,
   },
+  legendItemOff: {
+    opacity: 0.35,
+  },
   legendDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
   },
+  legendDotOff: {
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+  },
   legendText: {
     color: '#c4cfe8',
     fontSize: 11,
+  },
+  legendClear: {
+    color: '#54e6c3',
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 2,
   },
   notice: {
     marginHorizontal: 14,

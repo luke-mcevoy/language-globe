@@ -50,6 +50,7 @@ export function App() {
   const [friendsOpen, setFriendsOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [globeReady, setGlobeReady] = useState(false);
+  const [globeEpoch, setGlobeEpoch] = useState(0);
   // Empty set = no filter (all kinds shown).
   const [kindFilter, setKindFilter] = useState<Set<StationKind>>(new Set());
   const [tourOpen, setTourOpen] = useState(false);
@@ -73,15 +74,21 @@ export function App() {
   }, []);
 
   const loadStations = useCallback(async (forLanguage: string) => {
-    setStations({ status: 'loading' });
+    // Keep the last pins on the globe while the next language loads. Blanking
+    // the list (and the boot overlay) was tearing down WebGL mid-frame.
+    setStations((current) => (current.status === 'ready' ? current : { status: 'loading' }));
     try {
       const response = await getStations(forLanguage);
       setStations({ status: 'ready', data: response.stations });
     } catch (error) {
-      setStations({
-        status: 'error',
-        message: error instanceof ApiError ? error.message : 'Could not load stations.',
-      });
+      setStations((current) =>
+        current.status === 'ready'
+          ? current
+          : {
+              status: 'error',
+              message: error instanceof ApiError ? error.message : 'Could not load stations.',
+            },
+      );
     }
   }, []);
 
@@ -233,7 +240,26 @@ export function App() {
   const languages = health?.languages?.length ? health.languages : FALLBACK_LANGUAGES;
   const targetLanguage = language;
   const languageName = languageLabel(targetLanguage, languages);
-  const booting = stations.status === 'loading' || !globeReady;
+  const markGlobeReady = useCallback(() => {
+    sessionStorage.removeItem('lg-gl-attempts');
+    setGlobeReady(true);
+  }, []);
+  const recoverGlobe = useCallback(() => {
+    // three.js cannot rebuild a lost WebGL context in place. Remount the
+    // globe. A full page reload is a last resort: Chrome-with-an-update-
+    // pending often loses the context again immediately, and the old 30s
+    // guard then left a permanently black Earth.
+    const last = Number(sessionStorage.getItem('lg-gl-reload') ?? 0);
+    const now = Date.now();
+    if (now - last < 1500) return;
+    const attempts = Number(sessionStorage.getItem('lg-gl-attempts') ?? 0);
+    if (attempts >= 4) return;
+    sessionStorage.setItem('lg-gl-reload', String(now));
+    sessionStorage.setItem('lg-gl-attempts', String(attempts + 1));
+    setGlobeReady(false);
+    setGlobeEpoch((epoch) => epoch + 1);
+  }, []);
+  const booting = !globeReady;
 
   const changeLanguage = useCallback(
     (next: string) => {
@@ -263,6 +289,7 @@ export function App() {
   return (
     <div className="app">
       <GlobeView
+        key={globeEpoch}
         stations={visibleStations}
         selected={selected}
         playing={radio.station}
@@ -270,16 +297,8 @@ export function App() {
         favoriteIds={favorites.ids}
         friendsListening={friendsListening}
         onSelect={tune}
-        onReady={() => setGlobeReady(true)}
-        onContextLost={() => {
-          // A lost WebGL context leaves the globe permanently black (three.js
-          // cannot rebuild in place), so reload once to recover. The timestamp
-          // guard prevents a reload loop if the GPU is genuinely broken.
-          const last = Number(sessionStorage.getItem('lg-gl-reload') ?? 0);
-          if (Date.now() - last < 30000) return;
-          sessionStorage.setItem('lg-gl-reload', String(Date.now()));
-          window.location.reload();
-        }}
+        onReady={markGlobeReady}
+        onContextLost={recoverGlobe}
       />
 
       <header className="hud hud--top">

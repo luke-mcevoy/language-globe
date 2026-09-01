@@ -93,6 +93,8 @@ export function GlobeView({
   const [hovered, setHovered] = useState<Station | null>(null);
   const onContextLostRef = useRef(onContextLost);
   onContextLostRef.current = onContextLost;
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -123,20 +125,20 @@ export function GlobeView({
         }
         day.colorSpace = THREE.SRGBColorSpace;
         setMaterial(new THREE.MeshBasicMaterial({ map: day }));
-        onReady?.();
+        onReadyRef.current?.();
       },
       undefined,
       () => {
         // Without the texture globe.gl still renders its default sphere, so
         // the app degrades to a plain globe instead of a blank screen.
-        onReady?.();
+        onReadyRef.current?.();
       },
     );
 
     return () => {
       disposed = true;
     };
-  }, [onReady]);
+  }, []);
 
   const friendStationIds = useMemo(
     () => new Set(friendsListening.map((friend) => friend.stationId)),
@@ -304,7 +306,7 @@ export function GlobeView({
           pointAltitude={pointAltitude}
           pointRadius={pointRadius}
           pointResolution={6}
-          pointsTransitionDuration={600}
+          pointsTransitionDuration={0}
           pointLabel={pointLabel}
           onPointHover={(object: object | null) => setHovered((object as Station | null) ?? null)}
           onPointClick={(object: object) => onSelect(object as Station)}

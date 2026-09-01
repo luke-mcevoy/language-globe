@@ -972,8 +972,10 @@ code {
   justify-content: center;
 }
 
+/* Chunk swaps crossfade in place — the old slide up/down added vertical
+   motion every 15s on top of the karaoke movement. */
 .subtitles__layer--in {
-  animation: subtitle-in 300ms ease-out;
+  animation: subtitle-in 220ms ease-out;
 }
 
 .subtitles__layer--out {
@@ -981,29 +983,25 @@ code {
   left: 0;
   right: 0;
   bottom: 0;
-  animation: subtitle-out 300ms ease-in forwards;
+  animation: subtitle-out 220ms ease-in forwards;
   pointer-events: none;
 }
 
 @keyframes subtitle-in {
   from {
     opacity: 0;
-    transform: translateY(12px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
 @keyframes subtitle-out {
   from {
     opacity: 1;
-    transform: translateY(0);
   }
   to {
     opacity: 0;
-    transform: translateY(-12px);
   }
 }
 
@@ -1031,21 +1029,17 @@ code {
   color: #ffffff;
 }
 
+/* Highlight must not change glyph metrics: no weight change, no scale,
+   no padding — bolding the active word made the whole line reflow on
+   every word advance (~2x/sec), which read as constant jitter. */
 .subtitles__word--current {
-  display: inline-block;
   color: #7bfbdc;
-  font-weight: 700;
-  transform: scale(1.04);
-  transform-origin: 50% 60%;
-  padding: 0 0.08em;
-  margin: 0 -0.08em;
   text-shadow:
     0 0 8px rgba(84, 230, 195, 0.95),
     0 0 22px rgba(84, 230, 195, 0.7),
     0 0 40px rgba(84, 230, 195, 0.35),
     0 2px 8px rgba(0, 0, 0, 0.8);
   transition:
-    transform 120ms ease,
     color 120ms ease,
     text-shadow 120ms ease;
 }

@@ -19,7 +19,8 @@
     "start": "npm run start --workspace server"
   },
   "devDependencies": {
-    "concurrently": "^10.0.5"
+    "concurrently": "^10.0.5",
+    "playwright": "^1.62.1"
   },
   "engines": {
     "node": ">=20"

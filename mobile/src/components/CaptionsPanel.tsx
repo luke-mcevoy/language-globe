@@ -537,12 +537,13 @@ const styles = StyleSheet.create({
   wordFuture: {
     color: '#d7dff2',
   },
+  // No fontWeight change here: bolding the active word widens it and
+  // reflows the whole paragraph on every word advance (visible jitter).
   wordCurrent: {
     color: '#052019',
     backgroundColor: '#54e6c3',
     borderRadius: 5,
     overflow: 'hidden',
-    fontWeight: '900',
   },
   paused: {
     color: '#ffe59d',

@@ -1,8 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { ApiError, captionSessionAudioUrl, pollCaptionSession, startCaptionSession, stopCaptionSession } from '../lib/api';
+import {
+  ApiError,
+  captionSessionAudioUrl,
+  lookupWord,
+  pollCaptionSession,
+  startCaptionSession,
+  stopCaptionSession,
+} from '../lib/api';
 import { findActiveChunk, findActiveWordIndex, sessionTimeAt } from '../lib/captionSync';
-import type { CaptionChunk, Station } from '../types';
+import type { CaptionChunk, Station, VocabEntry } from '../types';
 
 interface CaptionsPanelProps {
   station: Station | null;
@@ -12,6 +19,8 @@ interface CaptionsPanelProps {
   chunkSeconds: number;
   onClose: () => void;
   onAudioUrlChange: (url: string | null) => void;
+  onPauseAudio: () => void;
+  onResumeAudio: () => void;
   playback: {
     currentTime: number;
     playing: boolean;
@@ -28,15 +37,29 @@ type FeedItem =
   | { kind: 'chunk'; chunk: CaptionChunk }
   | { kind: 'music'; seq: number; count: number };
 
+interface WordLookup {
+  word: string;
+  status: 'loading' | 'ready' | 'error';
+  entry?: VocabEntry;
+  message?: string;
+}
+
 const IDLE_KARAOKE: KaraokeState = { chunkSeq: null, wordIndex: -1 };
 const MUSIC_TEXT = '♪ music ♪';
 const SYNC_MARGIN_MS = 8_000;
+
+/** Strip surrounding punctuation: tapping "¡Sacude!" looks up "Sacude". */
+function cleanWord(raw: string): string {
+  return raw.replace(/^[\s\p{P}\p{S}]+/u, '').replace(/[\s\p{P}\p{S}]+$/u, '');
+}
 
 export function CaptionsPanel({
   chunkSeconds,
   enabled,
   onAudioUrlChange,
   onClose,
+  onPauseAudio,
+  onResumeAudio,
   paused,
   playback,
   station,
@@ -50,10 +73,12 @@ export function CaptionsPanel({
   const [syncReady, setSyncReady] = useState(false);
   const [syncProgress, setSyncProgress] = useState(0);
   const [bufferVersion, setBufferVersion] = useState(0);
+  const [lookup, setLookup] = useState<WordLookup | null>(null);
   const bufferRef = useRef<{ bufferedMs: number; atMs: number } | null>(null);
   const sessionStartRef = useRef<number | null>(null);
   const scrollRef = useRef<ScrollView | null>(null);
   const delaySeconds = chunkSeconds + 5;
+  const stationName = station?.name ?? '';
 
   useEffect(() => {
     setChunks([]);
@@ -62,6 +87,7 @@ export function CaptionsPanel({
     setKaraoke(IDLE_KARAOKE);
     setSyncReady(false);
     setSyncProgress(0);
+    setLookup(null);
     bufferRef.current = null;
     sessionStartRef.current = null;
   }, [station?.id]);
@@ -200,6 +226,41 @@ export function CaptionsPanel({
     return () => clearInterval(timer);
   }, [chunks, paused, playback.currentTime, playback.playing, playback.receivedAtMs, sessionId, syncReady, visible]);
 
+  const handleWordTap = useCallback(
+    (raw: string, context: string) => {
+      const word = cleanWord(raw);
+      if (word.length === 0) return;
+      onPauseAudio();
+      setLookup({ word, status: 'loading' });
+      lookupWord(word, context, stationName)
+        .then((response) =>
+          setLookup((current) =>
+            current?.word === word ? { ...current, status: 'ready', entry: response.entry } : current,
+          ),
+        )
+        .catch((err: unknown) =>
+          setLookup((current) =>
+            current?.word === word
+              ? {
+                  ...current,
+                  status: 'error',
+                  message: err instanceof ApiError ? err.message : 'Translation failed. Try again.',
+                }
+              : current,
+          ),
+        );
+    },
+    [onPauseAudio, stationName],
+  );
+
+  const closeLookup = useCallback(
+    (resume: boolean) => {
+      setLookup(null);
+      if (resume) onResumeAudio();
+    },
+    [onResumeAudio],
+  );
+
   const feedItems = useMemo(() => {
     const items: FeedItem[] = [];
     for (const chunk of chunks) {
@@ -267,7 +328,7 @@ export function CaptionsPanel({
           const isPlaying = item.chunk.seq === activeChunkSeq;
           return (
             <Text key={item.chunk.seq} style={[styles.chunk, isLatest && styles.latest, isPlaying && styles.playingChunk]}>
-              {renderChunkBody(item.chunk, isPlaying, isPlaying ? activeWordIndex : -1)}
+              {renderChunkBody(item.chunk, isPlaying, isPlaying ? activeWordIndex : -1, handleWordTap)}
             </Text>
           );
         })}
@@ -275,6 +336,31 @@ export function CaptionsPanel({
         {error && <Text style={styles.error}>{error}</Text>}
         {pending && <Text style={styles.pending}>...</Text>}
       </ScrollView>
+      {lookup && (
+        <View style={styles.lookupSheet}>
+          <Text style={styles.lookupWord}>{lookup.word}</Text>
+          {lookup.status === 'loading' && <Text style={styles.lookupMuted}>translating…</Text>}
+          {lookup.status === 'error' && <Text style={styles.lookupErrorText}>{lookup.message}</Text>}
+          {lookup.status === 'ready' && lookup.entry && (
+            <>
+              <Text style={styles.lookupTranslation}>{lookup.entry.translation}</Text>
+              {lookup.entry.note ? <Text style={styles.lookupNote}>{lookup.entry.note}</Text> : null}
+              <Text style={styles.lookupSaved}>
+                ✓ Saved to your vocab
+                {lookup.entry.timesLookedUp > 1 ? ` · looked up ${lookup.entry.timesLookedUp}×` : ''}
+              </Text>
+            </>
+          )}
+          <View style={styles.lookupActions}>
+            <Pressable style={[styles.lookupButton, styles.lookupResume]} onPress={() => closeLookup(true)}>
+              <Text style={styles.lookupResumeText}>▶ Resume</Text>
+            </Pressable>
+            <Pressable style={styles.lookupButton} onPress={() => closeLookup(false)}>
+              <Text style={styles.lookupCloseText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
       <View style={styles.footer}>
         <Text style={styles.footerText}>{wordCount} words</Text>
         <Text style={[styles.footerText, syncReady && styles.footerLive]}>{status}</Text>
@@ -283,17 +369,36 @@ export function CaptionsPanel({
   );
 }
 
-function renderChunkBody(chunk: CaptionChunk, isCurrentChunk: boolean, activeWordIndex: number) {
-  const words = chunk.words;
-  if (!isCurrentChunk || !words || words.length === 0) return chunk.text;
+type WordTapHandler = (raw: string, context: string) => void;
 
-  return words.map((word, index) => {
-    const stateStyle =
-      index < activeWordIndex ? styles.wordPast : index === activeWordIndex ? styles.wordCurrent : styles.wordFuture;
+function renderChunkBody(
+  chunk: CaptionChunk,
+  isCurrentChunk: boolean,
+  activeWordIndex: number,
+  onWord: WordTapHandler,
+) {
+  const words = chunk.words;
+  if (isCurrentChunk && words && words.length > 0) {
+    return words.map((word, index) => {
+      const stateStyle =
+        index < activeWordIndex ? styles.wordPast : index === activeWordIndex ? styles.wordCurrent : styles.wordFuture;
+      return (
+        <Text key={`${chunk.seq}-${index}`}>
+          <Text style={[styles.word, stateStyle]} onPress={() => onWord(word.word, chunk.text)}>
+            {word.word}
+          </Text>
+          {index < words.length - 1 ? ' ' : ''}
+        </Text>
+      );
+    });
+  }
+  // Non-karaoke chunks: split plain text on whitespace so each token stays
+  // tappable for lookup even without word-level timing.
+  return chunk.text.split(/(\s+)/).map((token, index) => {
+    if (!/\S/.test(token)) return token;
     return (
-      <Text key={`${chunk.seq}-${index}`}>
-        <Text style={[styles.word, stateStyle]}>{word.word}</Text>
-        {index < words.length - 1 ? ' ' : ''}
+      <Text key={`${chunk.seq}-${index}`} onPress={() => onWord(token, chunk.text)}>
+        {token}
       </Text>
     );
   });
@@ -305,7 +410,7 @@ const styles = StyleSheet.create({
     left: 14,
     right: 14,
     bottom: 168,
-    maxHeight: 300,
+    maxHeight: 380,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.14)',
     backgroundColor: 'rgba(9, 14, 29, 0.92)',
@@ -447,6 +552,71 @@ const styles = StyleSheet.create({
     color: '#54e6c3',
     fontSize: 20,
     lineHeight: 22,
+  },
+  lookupSheet: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: 'rgba(5, 32, 25, 0.55)',
+    gap: 6,
+  },
+  lookupWord: {
+    color: '#54e6c3',
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  lookupMuted: {
+    color: '#7f8ba6',
+    fontSize: 13,
+    fontStyle: 'italic',
+  },
+  lookupErrorText: {
+    color: '#ff9aac',
+    fontSize: 13,
+  },
+  lookupTranslation: {
+    color: '#f7fbff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  lookupNote: {
+    color: '#aebbd5',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  lookupSaved: {
+    color: '#54e6c3',
+    fontSize: 11,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  lookupActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  lookupButton: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.13)',
+  },
+  lookupResume: {
+    backgroundColor: '#54e6c3',
+    borderColor: '#54e6c3',
+  },
+  lookupResumeText: {
+    color: '#052019',
+    fontWeight: '900',
+  },
+  lookupCloseText: {
+    color: '#dbe7ff',
+    fontWeight: '800',
   },
   footer: {
     flexDirection: 'row',

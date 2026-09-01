@@ -18,6 +18,9 @@ export interface Radio {
   };
   tune: (station: Station) => void;
   toggle: () => void;
+  /** Pause/resume without toggling — word-lookup must never start playback. */
+  pause: () => void;
+  resume: () => void;
   stop: () => void;
   retry: () => void;
   setVolume: (value: number) => void;
@@ -141,6 +144,19 @@ export function useRadio(): Radio {
     }
   }, [player, playerStatus.playing, station, status]);
 
+  const pause = useCallback(() => {
+    if (!station) return;
+    player.pause();
+    setStatus('paused');
+  }, [player, station]);
+
+  const resume = useCallback(() => {
+    if (!station) return;
+    if (playerStatus.playing) return;
+    setStatus('loading');
+    player.play();
+  }, [player, playerStatus.playing, station]);
+
   const stop = useCallback(() => {
     player.pause();
     player.setActiveForLockScreen(false);
@@ -176,13 +192,15 @@ export function useRadio(): Radio {
       playback,
       tune: playStation,
       toggle,
+      pause,
+      resume,
       stop,
       retry,
       setVolume,
       toggleMute: () => setMuted((value) => !value),
       setAudioUrlOverride,
     }),
-    [deadStations, error, muted, playStation, playback, retry, station, status, stop, toggle, volume, setVolume, setAudioUrlOverride],
+    [deadStations, error, muted, playStation, playback, pause, resume, retry, station, status, stop, toggle, volume, setVolume, setAudioUrlOverride],
   );
 
   return api;

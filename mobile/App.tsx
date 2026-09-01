@@ -175,6 +175,8 @@ export default function App() {
         chunkSeconds={health?.captionChunkSeconds ?? 15}
         onClose={() => setCaptionsOpen(false)}
         onAudioUrlChange={radio.setAudioUrlOverride}
+        onPauseAudio={radio.pause}
+        onResumeAudio={radio.resume}
         playback={radio.playback}
       />
 

@@ -10,6 +10,8 @@ import type {
   QuizSubmitResponse,
   StationsResponse,
   StatsResponse,
+  VocabLookupResponse,
+  VocabResponse,
 } from '../types';
 
 export class ApiError extends Error {
@@ -106,3 +108,14 @@ export const addFavorite = (stationId: string): Promise<Favorite> =>
 
 export const removeFavorite = (stationId: string): Promise<void> =>
   request<void>(`/api/favorites/${encodeURIComponent(stationId)}`, { method: 'DELETE' });
+
+export const lookupWord = (word: string, context: string, stationName: string): Promise<VocabLookupResponse> =>
+  request<VocabLookupResponse>('/api/vocab/lookup', {
+    method: 'POST',
+    body: JSON.stringify({ word, context, stationName }),
+  });
+
+export const getVocab = (): Promise<VocabResponse> => request<VocabResponse>('/api/vocab');
+
+export const removeVocabWord = (id: number): Promise<void> =>
+  request<void>(`/api/vocab/${id}`, { method: 'DELETE' });

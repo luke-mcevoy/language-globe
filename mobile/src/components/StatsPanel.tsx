@@ -1,7 +1,9 @@
+import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
+import { getVocab, removeVocabWord } from '../lib/api';
 import { flagEmoji, formatCompact, formatPercent, shortDate } from '../lib/format';
-import type { StatsResponse } from '../types';
+import type { StatsResponse, VocabEntry } from '../types';
 
 interface StatsPanelProps {
   visible: boolean;
@@ -37,10 +39,13 @@ export function StatsPanel({ visible, stats, loading, error, onClose }: StatsPan
 function StatsBody({ stats }: { stats: StatsResponse }) {
   if (stats.totals.quizzes === 0) {
     return (
-      <Center
-        title="No quizzes yet"
-        detail="Tune into a talk station, tap Quiz, and your accuracy, streak and passport will start filling in."
-      />
+      <ScrollView contentContainerStyle={styles.body}>
+        <Center
+          title="No quizzes yet"
+          detail="Tune into a talk station, tap Quiz, and your accuracy, streak and passport will start filling in."
+        />
+        <VocabSection />
+      </ScrollView>
     );
   }
 
@@ -91,7 +96,75 @@ function StatsBody({ stats }: { stats: StatsResponse }) {
           </View>
         ))}
       </View>
+
+      <VocabSection />
     </ScrollView>
+  );
+}
+
+/**
+ * "Words you looked up" — caption words the user tapped for a translation,
+ * newest first. Fetches on mount; renders nothing when the list is empty so
+ * the passport doesn't grow an empty section for first-time listeners.
+ */
+function VocabSection() {
+  const [words, setWords] = useState<VocabEntry[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getVocab()
+      .then((response) => {
+        if (!cancelled) setWords(response.words);
+      })
+      .catch(() => {
+        if (!cancelled) setWords([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!words || words.length === 0) return null;
+
+  const remove = (id: number) => {
+    setWords((current) => current?.filter((entry) => entry.id !== id) ?? null);
+    void removeVocabWord(id).catch(() => undefined);
+  };
+
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHead}>
+        <Text style={styles.sectionTitle}>Words you looked up</Text>
+        <Text style={styles.sectionNote}>
+          {words.length} {words.length === 1 ? 'word' : 'words'}
+        </Text>
+      </View>
+      <View style={styles.vocabList}>
+        {words.map((entry) => (
+          <View style={styles.vocabRow} key={entry.id}>
+            <View style={styles.vocabTextCol}>
+              <Text style={styles.vocabHeadLine}>
+                <Text style={styles.vocabWord}>{entry.word}</Text>
+                <Text style={styles.vocabDivider}> — </Text>
+                <Text style={styles.vocabTranslation}>{entry.translation}</Text>
+              </Text>
+              {entry.note ? <Text style={styles.vocabNote}>{entry.note}</Text> : null}
+            </View>
+            {entry.timesLookedUp > 1 && (
+              <Text style={styles.vocabCount}>{entry.timesLookedUp}×</Text>
+            )}
+            <Pressable
+              style={styles.vocabRemove}
+              onPress={() => remove(entry.id)}
+              accessibilityLabel={`Remove ${entry.word} from your vocab list`}
+              hitSlop={8}
+            >
+              <Text style={styles.vocabRemoveText}>✕</Text>
+            </Pressable>
+          </View>
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -306,6 +379,61 @@ const styles = StyleSheet.create({
   },
   countryMeta: {
     color: '#54e6c3',
+    fontWeight: '800',
+  },
+  vocabList: {
+    gap: 8,
+  },
+  vocabRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+  },
+  vocabTextCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  vocabHeadLine: {
+    color: '#dbe7ff',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  vocabWord: {
+    color: '#54e6c3',
+    fontWeight: '900',
+  },
+  vocabDivider: {
+    color: '#7f8ba6',
+  },
+  vocabTranslation: {
+    color: '#f7fbff',
+    fontWeight: '700',
+  },
+  vocabNote: {
+    color: '#8f9bb6',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  vocabCount: {
+    color: '#54e6c3',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  vocabRemove: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  vocabRemoveText: {
+    color: '#8f9bb6',
+    fontSize: 12,
     fontWeight: '800',
   },
 });

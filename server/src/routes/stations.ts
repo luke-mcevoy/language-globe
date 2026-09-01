@@ -1,10 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { config } from '../config.js';
+import { normalizeLanguage } from '../lib/languages.js';
 import { getStations } from '../services/stations.js';
 
 export async function registerStationRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Querystring: { language?: string } }>('/api/stations', async (request, reply) => {
-    const language = (request.query.language ?? config.targetLanguage).toLowerCase();
+    const language = normalizeLanguage(request.query.language, config.targetLanguage);
     try {
       return await getStations(language);
     } catch (error) {

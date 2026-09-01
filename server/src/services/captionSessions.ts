@@ -432,13 +432,13 @@ export class CaptionSessionStore {
     }
   }
 
-  async create(station: Station): Promise<CaptionSession> {
+  async create(station: Station, language?: string): Promise<CaptionSession> {
     // Creates must run one at a time: the session only lands in the map
     // *after* session.start() opens the stream (seconds), so two concurrent
     // creates for the same station would both pass the eviction scan and the
     // cap check, then both insert — filling the cap with duplicates. React
     // StrictMode's double-mount fires exactly that pattern.
-    const run = this.createChain.then(() => this.createSerialized(station));
+    const run = this.createChain.then(() => this.createSerialized(station, language));
     this.createChain = run.catch(() => undefined);
     return run;
   }
@@ -460,7 +460,7 @@ export class CaptionSessionStore {
     }
   }
 
-  private async createSerialized(station: Station): Promise<CaptionSession> {
+  private async createSerialized(station: Station, language?: string): Promise<CaptionSession> {
     this.evictStationSessions(station.id);
     if (this.sessions.size >= this.maxSessions) this.evictAbandonedSessions();
 
@@ -468,7 +468,10 @@ export class CaptionSessionStore {
       throw new CaptureError('stream_failed', 'Too many caption sessions are active. Close captions in another tab and try again.');
     }
 
-    const session = new CaptionSession(station, this.sessionOptions);
+    const session = new CaptionSession(station, {
+      ...this.sessionOptions,
+      transcribe: this.sessionOptions.transcribe ?? ((filePath) => transcribeChunk(filePath, language)),
+    });
     await session.start();
     const expiry = this.scheduleExpiry(session.id);
     this.sessions.set(session.id, { session, expiry });

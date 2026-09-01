@@ -209,6 +209,47 @@ code {
   gap: 10px;
 }
 
+.language-picker {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px 0 14px;
+  border-radius: 999px;
+}
+
+.language-picker select {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 550;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  padding: 10px 22px 10px 0;
+  cursor: pointer;
+  max-width: min(220px, 46vw);
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink-muted) 50%),
+    linear-gradient(135deg, var(--ink-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 10px) 16px,
+    calc(100% - 5px) 16px;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.language-picker select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.language-picker select:focus {
+  outline: none;
+}
+
+.language-picker select option {
+  color: #111;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -2496,6 +2537,19 @@ code {
     padding: 8px 12px;
     font-size: 12.5px;
     white-space: nowrap;
+  }
+
+  .hud__actions .language-picker {
+    flex: none;
+  }
+
+  .language-picker select {
+    font-size: 12.5px;
+    padding: 8px 20px 8px 0;
+    max-width: 180px;
+    background-position:
+      calc(100% - 8px) 14px,
+      calc(100% - 3px) 14px;
   }
 
   .brand {

@@ -71,7 +71,7 @@ export function QuizPanel({
     setElapsed(0);
     setPhase({ name: 'capturing', startedAt: Date.now() });
     try {
-      const response = await startQuiz(station.id, difficulty);
+      const response = await startQuiz(station.id, difficulty, targetLanguage);
       if (cancelled.current) return;
       if (response.kind === 'not_enough_speech') {
         setPhase({ name: 'no-speech', payload: response });
@@ -88,7 +88,7 @@ export function QuizPanel({
         error instanceof ApiError ? error.message : 'Something went wrong while building your quiz.';
       setPhase({ name: 'error', message });
     }
-  }, [difficulty, station.id]);
+  }, [difficulty, station.id, targetLanguage]);
 
   const choose = useCallback((questionIndex: number, optionIndex: number) => {
     setPhase((current) => {

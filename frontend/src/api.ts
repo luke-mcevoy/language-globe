@@ -69,14 +69,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const getHealth = (): Promise<HealthResponse> => request<HealthResponse>('/api/health');
 
-export const getStations = (): Promise<StationsResponse> => request<StationsResponse>('/api/stations');
+export const getStations = (language?: string): Promise<StationsResponse> => {
+  const query = language ? `?language=${encodeURIComponent(language)}` : '';
+  return request<StationsResponse>(`/api/stations${query}`);
+};
 
 export const getStats = (): Promise<StatsResponse> => request<StatsResponse>('/api/stats');
 
-export const startCaptionSession = (stationId: string, signal?: AbortSignal): Promise<CaptionSessionCreatedResponse> =>
+export const startCaptionSession = (
+  stationId: string,
+  language?: string,
+  signal?: AbortSignal,
+): Promise<CaptionSessionCreatedResponse> =>
   request<CaptionSessionCreatedResponse>('/api/captions/session', {
     method: 'POST',
-    body: JSON.stringify({ stationId }),
+    body: JSON.stringify({ stationId, ...(language ? { language } : {}) }),
     signal,
   });
 
@@ -93,10 +100,10 @@ export const stopCaptionSession = (sessionId: string): Promise<void> =>
 export const captionSessionAudioUrl = (sessionId: string, delaySeconds: number): string =>
   `/api/captions/session/${encodeURIComponent(sessionId)}/audio?delay=${delaySeconds}`;
 
-export const startQuiz = (stationId: string, difficulty: Difficulty): Promise<QuizStartResponse> =>
+export const startQuiz = (stationId: string, difficulty: Difficulty, language?: string): Promise<QuizStartResponse> =>
   request<QuizStartResponse>('/api/quiz/start', {
     method: 'POST',
-    body: JSON.stringify({ stationId, difficulty }),
+    body: JSON.stringify({ stationId, difficulty, ...(language ? { language } : {}) }),
   });
 
 export const submitQuiz = (quizId: string, answers: (number | null)[]): Promise<QuizSubmitResponse> =>
@@ -113,10 +120,15 @@ export const addFavorite = (stationId: string): Promise<Favorite> =>
 export const removeFavorite = (stationId: string): Promise<void> =>
   request<void>(`/api/favorites/${encodeURIComponent(stationId)}`, { method: 'DELETE' });
 
-export const lookupWord = (word: string, context: string, stationName: string): Promise<VocabLookupResponse> =>
+export const lookupWord = (
+  word: string,
+  context: string,
+  stationName: string,
+  language?: string,
+): Promise<VocabLookupResponse> =>
   request<VocabLookupResponse>('/api/vocab/lookup', {
     method: 'POST',
-    body: JSON.stringify({ word, context, stationName }),
+    body: JSON.stringify({ word, context, stationName, ...(language ? { language } : {}) }),
   });
 
 export const getVocab = (): Promise<VocabResponse> => request<VocabResponse>('/api/vocab');

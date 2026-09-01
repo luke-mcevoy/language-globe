@@ -2,18 +2,24 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { ApiError, getHealth, getStations, getStats } from './src/lib/api';
-import { titleCase } from './src/lib/format';
 import { GlobeView, KIND_COLORS } from './src/components/GlobeView';
 import { CaptionsPanel } from './src/components/CaptionsPanel';
 import { FavoritesPanel } from './src/components/FavoritesPanel';
+import { LanguagePicker } from './src/components/LanguagePicker';
 import { PlayerBar } from './src/components/PlayerBar';
 import { QuizPanel } from './src/components/QuizPanel';
 import { StatsPanel } from './src/components/StatsPanel';
 import { useFavorites } from './src/hooks/useFavorites';
 import { useRadio } from './src/hooks/useRadio';
-import type { HealthResponse, Station, StationKind, StatsResponse } from './src/types';
+import { languageLabel } from './src/lib/languages';
+import type { HealthResponse, LearningLanguage, Station, StationKind, StatsResponse } from './src/types';
 
 type Loadable<T> = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; data: T };
+
+const FALLBACK_LANGUAGES: LearningLanguage[] = [
+  { id: 'spanish', name: 'Spanish', nativeName: 'Español', code: 'es' },
+  { id: 'italian', name: 'Italian', nativeName: 'Italiano', code: 'it' },
+];
 
 const ALL_KINDS: StationKind[] = ['talk', 'music', 'unknown'];
 const KIND_LABELS: Record<StationKind, string> = {
@@ -34,6 +40,7 @@ export default function App() {
   const [globeReady, setGlobeReady] = useState(false);
   // Empty set = no filter (all kinds shown).
   const [kindFilter, setKindFilter] = useState<Set<StationKind>>(new Set());
+  const [language, setLanguage] = useState('spanish');
   const radio = useRadio();
   const favorites = useFavorites();
 
@@ -49,10 +56,10 @@ export default function App() {
     }
   }, []);
 
-  const loadStations = useCallback(async () => {
+  const loadStations = useCallback(async (forLanguage: string) => {
     setStations({ status: 'loading' });
     try {
-      const response = await getStations();
+      const response = await getStations(forLanguage);
       setStations({ status: 'ready', data: response.stations });
     } catch (error) {
       setStations({
@@ -64,14 +71,26 @@ export default function App() {
 
   useEffect(() => {
     void getHealth()
-      .then(setHealth)
+      .then((next) => {
+        setHealth(next);
+        const catalog = next.languages ?? [];
+        const known = new Set(catalog.map((item) => item.id));
+        setLanguage((current) =>
+          known.has(current) ? current : known.has(next.targetLanguage) ? next.targetLanguage : current,
+        );
+      })
       .catch(() => setHealth(null));
-    void loadStations();
     void refreshStats();
-  }, [loadStations, refreshStats]);
+  }, [refreshStats]);
+
+  useEffect(() => {
+    void loadStations(language);
+  }, [language, loadStations]);
 
   const stationList = stations.status === 'ready' ? stations.data : [];
-  const targetLanguage = health?.targetLanguage ?? 'spanish';
+  const languages = health?.languages?.length ? health.languages : FALLBACK_LANGUAGES;
+  const targetLanguage = language;
+  const languageName = languageLabel(targetLanguage, languages);
 
   const toggleKind = useCallback((kind: StationKind) => {
     setKindFilter((previous) => {
@@ -129,6 +148,18 @@ export default function App() {
     void refreshStats();
   }, [refreshStats]);
 
+  const changeLanguage = useCallback(
+    (next: string) => {
+      if (next === language) return;
+      radio.stop();
+      setSelected(null);
+      setQuizOpen(false);
+      setCaptionsOpen(false);
+      setLanguage(next);
+    },
+    [language, radio],
+  );
+
   const booting = stations.status === 'loading' || !globeReady;
 
   return (
@@ -151,7 +182,7 @@ export default function App() {
             <View style={styles.brandText}>
               <Text style={styles.brandTitle}>Language Globe</Text>
               <Text style={styles.brandSubtitle}>
-                {titleCase(targetLanguage)} radio ·{' '}
+                {languageName} radio ·{' '}
                 {stations.status === 'ready'
                   ? kindFilter.size === 0
                     ? `${stationList.length.toLocaleString()} stations`
@@ -164,6 +195,7 @@ export default function App() {
           </View>
 
           <View style={styles.actionRow}>
+            <LanguagePicker language={targetLanguage} languages={languages} onChange={changeLanguage} />
             <Pressable style={styles.actionButton} onPress={surpriseMe} disabled={stationList.length === 0}>
               <Text style={styles.actionText}>Surprise</Text>
             </Pressable>
@@ -216,7 +248,7 @@ export default function App() {
         {stations.status === 'error' && (
           <View style={[styles.notice, styles.errorNotice]}>
             <Text style={styles.noticeText}>{stations.message}</Text>
-            <Pressable onPress={() => void loadStations()}>
+            <Pressable onPress={() => void loadStations(language)}>
               <Text style={styles.retryText}>Retry</Text>
             </Pressable>
           </View>
@@ -225,6 +257,7 @@ export default function App() {
 
       <CaptionsPanel
         station={radio.station}
+        language={targetLanguage}
         visible={captionsOpen}
         enabled={health?.captionsEnabled ?? false}
         paused={quizOpen}

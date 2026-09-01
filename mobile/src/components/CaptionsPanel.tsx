@@ -13,6 +13,7 @@ import type { CaptionChunk, Station, VocabEntry } from '../types';
 
 interface CaptionsPanelProps {
   station: Station | null;
+  language: string;
   visible: boolean;
   enabled: boolean;
   paused: boolean;
@@ -57,6 +58,7 @@ function cleanWord(raw: string): string {
 export function CaptionsPanel({
   chunkSeconds,
   enabled,
+  language,
   onAudioUrlChange,
   onClose,
   onPauseAudio,
@@ -116,7 +118,7 @@ export function CaptionsPanel({
       try {
         // Not abortable: an aborted create leaks the session server-side
         // because we never learn the id we would need to delete.
-        const created = await startCaptionSession(stationId);
+        const created = await startCaptionSession(stationId, language);
         session = created.sessionId;
         if (cancelled) {
           // Cleanup ran before the id arrived; release the session ourselves.
@@ -160,7 +162,7 @@ export function CaptionsPanel({
       onAudioUrlChange(null);
       if (session) void stopCaptionSession(session).catch(() => undefined);
     };
-  }, [enabled, onAudioUrlChange, paused, station, visible]);
+  }, [enabled, language, onAudioUrlChange, paused, station, visible]);
 
   useEffect(() => {
     if (syncReady || !sessionId) return;
@@ -233,7 +235,7 @@ export function CaptionsPanel({
       if (word.length === 0) return;
       onPauseAudio();
       setLookup({ word, status: 'loading' });
-      lookupWord(word, context, stationName)
+      lookupWord(word, context, stationName, language)
         .then((response) =>
           setLookup((current) =>
             current?.word === word
@@ -253,7 +255,7 @@ export function CaptionsPanel({
           ),
         );
     },
-    [onPauseAudio, stationName],
+    [language, onPauseAudio, stationName],
   );
 
   const closeLookup = useCallback(

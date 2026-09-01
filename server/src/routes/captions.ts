@@ -1,8 +1,10 @@
 import type { FastifyInstance } from 'fastify';
+import { config } from '../config.js';
+import { normalizeLanguage } from '../lib/languages.js';
 import { CaptureError } from '../services/capture.js';
 import { captionSessions } from '../services/captionSessions.js';
 import { captionsEnabled } from '../services/providers.js';
-import { getStations } from '../services/stations.js';
+import { findStation } from '../services/stations.js';
 import type { CaptionPollResponse, CaptionSessionCreatedResponse } from '../types.js';
 
 function parseAfter(value: unknown): number {
@@ -18,7 +20,7 @@ function parseDelay(value: unknown): number {
 }
 
 export async function registerCaptionRoutes(app: FastifyInstance): Promise<void> {
-  app.post<{ Body: { stationId?: string } }>('/api/captions/session', async (request, reply) => {
+  app.post<{ Body: { stationId?: string; language?: string } }>('/api/captions/session', async (request, reply) => {
     if (!captionsEnabled()) {
       return reply.status(503).send({
         error: 'captions_disabled',
@@ -32,14 +34,15 @@ export async function registerCaptionRoutes(app: FastifyInstance): Promise<void>
       return reply.status(400).send({ error: 'bad_request', message: 'stationId is required.' });
     }
 
-    const { stations } = await getStations();
-    const station = stations.find((candidate) => candidate.id === stationId);
+    const language = normalizeLanguage(request.body?.language, config.targetLanguage);
+
+    const station = await findStation(stationId, language);
     if (!station) {
       return reply.status(404).send({ error: 'unknown_station', message: 'That station is no longer in the index.' });
     }
 
     try {
-      const session = await captionSessions.create(station);
+      const session = await captionSessions.create(station, language);
       const response: CaptionSessionCreatedResponse = {
         sessionId: session.id,
         chunkSeconds: session.chunkSeconds,

@@ -17,13 +17,13 @@ const STEPS: TourStep[] = [
   {
     glyph: '🌍',
     title: 'Welcome to Language Globe',
-    body: 'Learn Spanish by listening to the real world. Every glowing pin is a live radio station — spin the globe and tap one to tune in, from Mexico City to Madrid to Buenos Aires.',
+    body: 'Learn a language by listening to the real world. Pick Spanish, Italian, French, or a dozen others from the menu, then spin the globe — every glowing pin is a live radio station.',
     hint: 'Teal pins are talk & news, purple are music. Click the legend in the corner to filter.',
   },
   {
     glyph: '💬',
     title: 'Live captions, word by word',
-    body: 'Hit CC while listening and Spanish subtitles appear beneath the globe, highlighted word-by-word in sync with the audio — like karaoke for radio.',
+    body: 'Hit CC while listening and live subtitles appear beneath the globe, highlighted word-by-word in sync with the audio — like karaoke for radio.',
     hint: 'The audio runs slightly behind live so the captions can line up exactly.',
   },
   {

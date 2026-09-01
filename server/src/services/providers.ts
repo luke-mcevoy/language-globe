@@ -13,6 +13,10 @@ import {
   type WordTiming,
 } from '../lib/whisperWords.js';
 import type { Difficulty, QuizQuestion } from '../types.js';
+
+function whisperLanguage(language?: string): string | undefined {
+  return targetLanguageCode(language ?? config.targetLanguage);
+}
 import {
   buildQuizPrompt,
   buildTranslationPrompt,
@@ -212,8 +216,8 @@ async function ensureWhisperServer(): Promise<void> {
   if (config.whisperServerExternal) return;
   if (whisperServer && !whisperServer.killed && whisperServer.exitCode === null) return whisperServerReady ?? Promise.resolve();
 
-  const language = targetLanguageCode(config.targetLanguage) ?? config.targetLanguage;
-  const args = ['-m', config.whisperModelPath, '-l', language, '--port', String(config.whisperServerPort), '--host', config.whisperServerHost];
+  // Start unlocked so per-request `language` on /inference can switch (Italian, etc.).
+  const args = ['-m', config.whisperModelPath, '-l', 'auto', '--port', String(config.whisperServerPort), '--host', config.whisperServerHost];
   if (config.whisperDtwPreset) {
     // DTW gives real token-level timestamps (t_dtw); without it whisper.cpp
     // interpolates times evenly across each segment and karaoke can't line up.
@@ -264,13 +268,15 @@ function extractWordsFromWhisperServer(payload: WhisperServerVerboseResponse): W
   return null;
 }
 
-async function transcribeWithWhisperServer(wavPath: string): Promise<TranscribeResult> {
+async function transcribeWithWhisperServer(wavPath: string, language?: string): Promise<TranscribeResult> {
   await ensureWhisperServer();
   const form = new FormData();
   form.append('file', new Blob([await fsp.readFile(wavPath)], { type: 'audio/wav' }), path.basename(wavPath));
   // verbose_json gives us word/token detail when the server build supports it,
   // and still contains `text` when it does not — so we never lose the caption.
   form.append('response_format', 'verbose_json');
+  const code = whisperLanguage(language);
+  if (code) form.append('language', code);
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60_000);
@@ -294,13 +300,13 @@ interface WhisperCliJson {
   transcription?: WhisperCliSegment[];
 }
 
-async function transcribeWithWhisperCli(wavPath: string): Promise<TranscribeResult> {
-  const language = targetLanguageCode(config.targetLanguage) ?? config.targetLanguage;
+async function transcribeWithWhisperCli(wavPath: string, language?: string): Promise<TranscribeResult> {
+  const code = whisperLanguage(language) ?? 'auto';
   const outputBase = wavPath.replace(/\.wav$/i, `-${randomUUID()}`);
   const jsonPath = `${outputBase}.json`;
   // -ojf writes a JSON file with per-token timings; -of picks the output base
   // name (whisper-cli appends `.json`).
-  const args = ['-m', config.whisperModelPath, '-l', language, '-np', '-nt', '-ojf', '-of', outputBase, '-f', wavPath];
+  const args = ['-m', config.whisperModelPath, '-l', code, '-np', '-nt', '-ojf', '-of', outputBase, '-f', wavPath];
 
   const stdout = await new Promise<string>((resolve, reject) => {
     const child = spawn(config.whisperCliBin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -348,25 +354,25 @@ async function transcribeWithWhisperCli(wavPath: string): Promise<TranscribeResu
   return { text: cleanTranscript(text.length > 0 ? text : stdout), words: words.length > 0 ? words : undefined };
 }
 
-async function transcribeLocal(filePath: string): Promise<TranscribeResult> {
+async function transcribeLocal(filePath: string, language?: string): Promise<TranscribeResult> {
   const wav = await convertToWhisperWav(filePath);
   try {
-    if (providerState.whisperServerAvailable) return await transcribeWithWhisperServer(wav.filePath);
-    return await transcribeWithWhisperCli(wav.filePath);
+    if (providerState.whisperServerAvailable) return await transcribeWithWhisperServer(wav.filePath, language);
+    return await transcribeWithWhisperCli(wav.filePath, language);
   } finally {
     await wav.cleanup();
   }
 }
 
-export async function transcribeChunk(filePath: string): Promise<TranscribeResult> {
+export async function transcribeChunk(filePath: string, language?: string): Promise<TranscribeResult> {
   if (providerState.transcribeProvider === 'local-whisper') {
-    return transcribeLocal(filePath);
+    return transcribeLocal(filePath, language);
   }
   throw new Error('No transcription provider is available.');
 }
 
-export async function transcribeAudio(filePath: string): Promise<string> {
-  return (await transcribeChunk(filePath)).text;
+export async function transcribeAudio(filePath: string, language?: string): Promise<string> {
+  return (await transcribeChunk(filePath, language)).text;
 }
 
 export async function generateOllamaQuestions(
@@ -409,22 +415,30 @@ export async function generateOllamaQuestions(
   return parseGeneratedQuestions(parsed);
 }
 
-async function generateLocalQuestions(transcript: string, difficulty: Difficulty): Promise<QuizQuestion[]> {
-  let questions = await generateOllamaQuestions(transcript, difficulty);
+async function generateLocalQuestions(
+  transcript: string,
+  difficulty: Difficulty,
+  language = config.targetLanguage,
+): Promise<QuizQuestion[]> {
+  let questions = await generateOllamaQuestions(transcript, difficulty, language);
   if (questions.length >= 2) return questions;
-  questions = await generateOllamaQuestions(transcript, difficulty);
+  questions = await generateOllamaQuestions(transcript, difficulty, language);
   if (questions.length >= 2) return questions;
   throw new Error('Ollama returned fewer than two usable questions');
 }
 
-export async function generateQuizQuestions(transcript: string, difficulty: Difficulty): Promise<QuizQuestion[]> {
+export async function generateQuizQuestions(
+  transcript: string,
+  difficulty: Difficulty,
+  language = config.targetLanguage,
+): Promise<QuizQuestion[]> {
   if (providerState.quizProvider === 'ollama') {
-    return generateLocalQuestions(transcript, difficulty);
+    return generateLocalQuestions(transcript, difficulty, language);
   }
   throw new Error('No quiz generation provider is available.');
 }
 
-async function translateWordOllama(word: string, context: string): Promise<WordTranslation> {
+async function translateWordOllama(word: string, context: string, language = config.targetLanguage): Promise<WordTranslation> {
   const response = await fetch(new URL('/api/chat', config.ollamaUrl), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -435,7 +449,7 @@ async function translateWordOllama(word: string, context: string): Promise<WordT
       options: { temperature: 0.2 },
       messages: [
         { role: 'system', content: 'You are a precise bilingual dictionary and reply only with JSON matching the schema.' },
-        { role: 'user', content: buildTranslationPrompt(word, context, config.targetLanguage) },
+        { role: 'user', content: buildTranslationPrompt(word, context, language) },
       ],
     }),
   });
@@ -455,9 +469,13 @@ async function translateWordOllama(word: string, context: string): Promise<WordT
 }
 
 /** Word lookups ride the quiz provider: same local model. */
-export async function translateWord(word: string, context: string): Promise<WordTranslation> {
+export async function translateWord(
+  word: string,
+  context: string,
+  language = config.targetLanguage,
+): Promise<WordTranslation> {
   if (providerState.quizProvider === 'ollama') {
-    return translateWordOllama(word, context);
+    return translateWordOllama(word, context, language);
   }
   throw new Error('No translation provider is available.');
 }

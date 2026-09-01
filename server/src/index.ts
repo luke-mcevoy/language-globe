@@ -22,6 +22,7 @@ import {
   quizEnabled,
   shutdownProviders,
 } from './services/providers.js';
+import { LEARNING_LANGUAGES } from './lib/languages.js';
 import { getStations } from './services/stations.js';
 import type { HealthResponse } from './types.js';
 
@@ -49,6 +50,7 @@ app.get('/api/health', async (): Promise<HealthResponse> => ({
   quizEnabled: quizEnabled(),
   captionsEnabled: captionsEnabled(),
   targetLanguage: config.targetLanguage,
+  languages: [...LEARNING_LANGUAGES],
   captureSeconds: config.captureSeconds,
   captionChunkSeconds: config.captionChunkSeconds,
   transcribeProvider: getProviderStatus().transcribeProvider,

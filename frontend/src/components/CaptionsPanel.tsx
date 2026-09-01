@@ -12,6 +12,7 @@ import type { CaptionChunk, Station, VocabEntry } from '../types';
 
 interface CaptionsPanelProps {
   station: Station;
+  language: string;
   active: boolean;
   enabled: boolean;
   paused: boolean;
@@ -76,6 +77,7 @@ export function CaptionsPanel({
   chunkSeconds,
   enabled,
   getAudioElement,
+  language,
   onAudioUrlChange,
   onClose,
   onPauseAudio,
@@ -134,7 +136,7 @@ export function CaptionsPanel({
       const top = Math.max(wordRect.top, 72);
 
       setLookup({ word, status: 'loading', top, left });
-      lookupWord(word, context, station.name)
+      lookupWord(word, context, station.name, language)
         .then((response) =>
           setLookup((current) =>
             current?.word === word
@@ -154,7 +156,7 @@ export function CaptionsPanel({
           ),
         );
     },
-    [onPauseAudio, station.name],
+    [language, onPauseAudio, station.name],
   );
 
   const closeLookup = useCallback(
@@ -203,7 +205,7 @@ export function CaptionsPanel({
         // Deliberately not abortable: if the panel closes (or the station
         // changes) mid-create, we still need the response so we can delete
         // the session we asked for — an aborted create leaks it server-side.
-        const created = await startCaptionSession(station.id);
+        const created = await startCaptionSession(station.id, language);
         session = created.sessionId;
         if (cancelled) {
           // The panel closed while the create was in flight; the cleanup ran
@@ -247,7 +249,7 @@ export function CaptionsPanel({
       onAudioUrlChange(null);
       if (session) void stopCaptionSession(session).catch(() => undefined);
     };
-  }, [active, enabled, onAudioUrlChange, paused, station.id]);
+  }, [active, enabled, language, onAudioUrlChange, paused, station.id]);
 
   // Flip syncReady once the relay buffer covers the delay (extrapolating
   // between polls, since long-polls can be 25s apart).

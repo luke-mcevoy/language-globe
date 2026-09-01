@@ -155,11 +155,21 @@ export interface StatsResponse {
   countries: CountryStat[];
 }
 
+export interface LearningLanguage {
+  id: string;
+  name: string;
+  nativeName: string;
+  code: string;
+}
+
 export interface HealthResponse {
   ok: true;
   quizEnabled: boolean;
   captionsEnabled: boolean;
+  /** Server default when the client has not picked a language. */
   targetLanguage: string;
+  /** Languages the picker can request from Radio Browser / whisper / quizzes. */
+  languages: LearningLanguage[];
   captureSeconds: number;
   captionChunkSeconds: number;
   transcribeProvider: 'local-whisper' | 'unavailable';

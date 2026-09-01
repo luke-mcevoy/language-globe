@@ -1,5 +1,7 @@
 import type { FastifyInstance } from 'fastify';
+import { config } from '../config.js';
 import { vocabStore } from '../db.js';
+import { normalizeLanguage } from '../lib/languages.js';
 import { requireUser, resolveUser } from '../lib/resolveUser.js';
 import { normalizeWord, type VocabRecord } from '../lib/vocab.js';
 import { quizEnabled, translateWord } from '../services/providers.js';
@@ -23,6 +25,7 @@ interface LookupBody {
   word?: unknown;
   context?: unknown;
   stationName?: unknown;
+  language?: unknown;
 }
 
 export async function registerVocabRoutes(app: FastifyInstance): Promise<void> {
@@ -40,6 +43,10 @@ export async function registerVocabRoutes(app: FastifyInstance): Promise<void> {
     const word = typeof request.body?.word === 'string' ? request.body.word.trim() : '';
     const context = typeof request.body?.context === 'string' ? request.body.context.slice(0, 600) : '';
     const stationName = typeof request.body?.stationName === 'string' ? request.body.stationName.slice(0, 120) : '';
+    const language = normalizeLanguage(
+      typeof request.body?.language === 'string' ? request.body.language : undefined,
+      config.targetLanguage,
+    );
 
     if (normalizeWord(word).length === 0 || word.length > 60) {
       return reply.status(400).send({ error: 'bad_request', message: 'A single word is required.' });
@@ -54,7 +61,7 @@ export async function registerVocabRoutes(app: FastifyInstance): Promise<void> {
 
     let translation;
     try {
-      translation = await translateWord(word, context);
+      translation = await translateWord(word, context, language);
     } catch (error) {
       request.log.warn({ err: error, word }, 'word translation failed');
       return reply.status(502).send({

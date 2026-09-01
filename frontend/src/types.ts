@@ -134,11 +134,19 @@ export interface StatsResponse {
   countries: CountryStat[];
 }
 
+export interface LearningLanguage {
+  id: string;
+  name: string;
+  nativeName: string;
+  code: string;
+}
+
 export interface HealthResponse {
   ok: true;
   quizEnabled: boolean;
   captionsEnabled: boolean;
   targetLanguage: string;
+  languages: LearningLanguage[];
   captureSeconds: number;
   captionChunkSeconds: number;
   transcribeProvider: 'local-whisper' | 'unavailable';

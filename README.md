@@ -2,7 +2,7 @@
 
 **Spin a 3D Earth, tune into live radio anywhere in the world, and learn a language from what's actually on the air right now.**
 
-Live streams get synced karaoke captions with word-by-word highlighting, any word you don't know is one click away from a translation, and a comprehension quiz is generated from the last minute of whatever you were listening to. Sign in to save vocab, favorites, quiz history, and to follow friends. The target language is configurable and defaults to Spanish.
+Live streams get synced karaoke captions with word-by-word highlighting, any word you don't know is one click away from a translation, and a comprehension quiz is generated from the last minute of whatever you were listening to. Sign in to save vocab, favorites, quiz history, and to follow friends. Pick a language from the header (Spanish, Italian, French, and more); the server default is Spanish.
 
 New visitors get a six-step welcome tour (replay it anytime with **?** in the header).
 
@@ -15,6 +15,8 @@ New visitors get a six-step welcome tour (replay it anytime with **?** in the he
 Every pin is a real radio station streaming right now, colored by content type. Click a pin — or hit **Surprise me** — and you're listening within seconds, with the station's local time and genre in the player. Dead streams are dimmed.
 
 The legend in the corner is a filter: click **talk / news**, **music**, or **unlabelled** to solo that kind; click more to add them; **show all** clears it. **Surprise me** respects the filter.
+
+The language menu next to **Surprise me** reloads the globe for that language and tells captions, quizzes, and word lookup which language you are learning. Your choice is remembered in this browser.
 
 ### Synced karaoke captions
 
@@ -71,6 +73,7 @@ The globe, station search, player, and stats work with no configuration. Caption
 Useful environment settings:
 
 ```bash
+# Default if the visitor has not picked a language in the UI.
 TARGET_LANGUAGE=spanish
 WHISPER_MODEL_PATH=models/ggml-large-v3-turbo.bin
 # Or point at a whisper-server you already started (typical for Docker + Metal):
@@ -98,7 +101,8 @@ The globe, live radio, accounts, favorites, and stats work with no extra models.
 
 ```bash
 # Host: whisper.cpp with DTW word timing (required for karaoke)
-whisper-server -m server/models/ggml-large-v3-turbo.bin -l es \
+# `-l auto` lets the app send Spanish, Italian, etc. per request.
+whisper-server -m server/models/ggml-large-v3-turbo.bin -l auto \
   --port 8788 --host 127.0.0.1 --dtw large.v3.turbo --no-flash-attn
 
 docker run --name language-globe -p 8890:8787 \
@@ -171,6 +175,6 @@ Stations come from Radio Browser and are cached for six hours in memory and SQLi
 
 ## Roadmap
 
-v1 (current): globe, live radio, karaoke captions, quizzes, accounts, favorites, friends, phone web layout.  
-v2: shareable challenge links, more target languages.  
+v1 (current): globe, live radio, language picker, karaoke captions, quizzes, accounts, favorites, friends, phone web layout.  
+v2: shareable challenge links.  
 v3: stable public hostname that does not depend on a laptop staying awake.

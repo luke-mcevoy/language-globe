@@ -1,6 +1,7 @@
 import { config as loadEnv } from 'dotenv';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { languageCode } from './lib/languages.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 /** server/ — src/ in dev, dist/ after a build, so climb one level either way. */
@@ -52,43 +53,6 @@ export const config = {
   userAgent: 'language-globe/0.1 (https://github.com/luke-mcevoy/language-globe)',
 } as const;
 
-/**
- * ISO-639-1 hint for the transcription model. Unknown languages simply get no
- * hint, which is a slightly worse transcript rather than an error.
- */
-const LANGUAGE_CODES: Record<string, string> = {
-  spanish: 'es',
-  english: 'en',
-  french: 'fr',
-  german: 'de',
-  italian: 'it',
-  portuguese: 'pt',
-  dutch: 'nl',
-  polish: 'pl',
-  russian: 'ru',
-  turkish: 'tr',
-  arabic: 'ar',
-  japanese: 'ja',
-  korean: 'ko',
-  chinese: 'zh',
-  mandarin: 'zh',
-  hindi: 'hi',
-  greek: 'el',
-  swedish: 'sv',
-  norwegian: 'no',
-  danish: 'da',
-  finnish: 'fi',
-  czech: 'cs',
-  romanian: 'ro',
-  hungarian: 'hu',
-  ukrainian: 'uk',
-  vietnamese: 'vi',
-  indonesian: 'id',
-  thai: 'th',
-  hebrew: 'he',
-  catalan: 'ca',
-};
-
 export function targetLanguageCode(language = config.targetLanguage): string | undefined {
-  return LANGUAGE_CODES[language.toLowerCase()];
+  return languageCode(language);
 }

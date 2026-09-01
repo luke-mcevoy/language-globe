@@ -3,11 +3,12 @@ import type { FastifyInstance } from 'fastify';
 import { config } from '../config.js';
 import { getQuiz, insertQuiz, recordResult } from '../db.js';
 import { gradeQuiz } from '../lib/grading.js';
+import { normalizeLanguage } from '../lib/languages.js';
 import { requireUser } from '../lib/resolveUser.js';
 import { countWords } from '../lib/text.js';
 import { CaptureError, captureStream } from '../services/capture.js';
 import { generateQuizQuestions, quizEnabled, transcribeAudio } from '../services/providers.js';
-import { getStations, suggestTalkStation } from '../services/stations.js';
+import { findStation, getStations, suggestTalkStation } from '../services/stations.js';
 import type { Difficulty, QuizQuestion, QuizStartResponse, QuizSubmitResponse } from '../types.js';
 
 /**
@@ -21,7 +22,7 @@ function parseDifficulty(value: unknown): Difficulty {
 }
 
 export async function registerQuizRoutes(app: FastifyInstance): Promise<void> {
-  app.post<{ Body: { stationId?: string; difficulty?: string } }>('/api/quiz/start', async (request, reply) => {
+  app.post<{ Body: { stationId?: string; difficulty?: string; language?: string } }>('/api/quiz/start', async (request, reply) => {
     const user = requireUser(request, reply);
     if (!user) return;
 
@@ -38,18 +39,20 @@ export async function registerQuizRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(400).send({ error: 'bad_request', message: 'stationId is required.' });
     }
     const difficulty = parseDifficulty(request.body?.difficulty);
+    const language = normalizeLanguage(request.body?.language, config.targetLanguage);
 
-    const { stations } = await getStations();
-    const station = stations.find((candidate) => candidate.id === stationId);
+    const station = await findStation(stationId, language);
     if (!station) {
       return reply.status(404).send({ error: 'unknown_station', message: 'That station is no longer in the index.' });
     }
+
+    const { stations } = await getStations(language);
 
     let transcript: string;
     try {
       const capture = await captureStream(station.url);
       try {
-        transcript = await transcribeAudio(capture.filePath);
+        transcript = await transcribeAudio(capture.filePath, language);
       } finally {
         // Always remove the clip, including when transcription throws.
         await capture.cleanup();
@@ -79,7 +82,7 @@ export async function registerQuizRoutes(app: FastifyInstance): Promise<void> {
 
     let questions: QuizQuestion[];
     try {
-      questions = await generateQuizQuestions(transcript, difficulty);
+      questions = await generateQuizQuestions(transcript, difficulty, language);
     } catch (error) {
       request.log.error({ err: error, stationId }, 'question generation failed');
       return reply.status(502).send({

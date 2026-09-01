@@ -5,6 +5,7 @@ import { CaptionsPanel } from './components/CaptionsPanel';
 import { FavoritesPanel } from './components/FavoritesPanel';
 import { FriendsPanel } from './components/FriendsPanel';
 import { GlobeView, KIND_COLORS } from './components/GlobeView';
+import { LanguagePicker } from './components/LanguagePicker';
 import { PlayerBar } from './components/PlayerBar';
 import { QuizPanel } from './components/QuizPanel';
 import { WelcomeTour } from './components/WelcomeTour';
@@ -19,10 +20,14 @@ import { useFavorites } from './hooks/useFavorites';
 import { useFriendsListening } from './hooks/useFriendsListening';
 import { usePresence } from './hooks/usePresence';
 import { useRadio } from './hooks/useRadio';
-import { titleCase } from './lib/format';
-import type { HealthResponse, Station, StationKind, StatsResponse } from './types';
+import { languageLabel, readStoredLanguage, writeStoredLanguage } from './lib/languages';
+import type { HealthResponse, LearningLanguage, Station, StationKind, StatsResponse } from './types';
 
 const TOUR_SEEN_KEY = 'lg-tour-seen';
+const FALLBACK_LANGUAGES: LearningLanguage[] = [
+  { id: 'spanish', name: 'Spanish', nativeName: 'Español', code: 'es' },
+  { id: 'italian', name: 'Italian', nativeName: 'Italiano', code: 'it' },
+];
 
 const ALL_KINDS: StationKind[] = ['talk', 'music', 'unknown'];
 const KIND_LABELS: Record<StationKind, string> = {
@@ -48,6 +53,7 @@ export function App() {
   // Empty set = no filter (all kinds shown).
   const [kindFilter, setKindFilter] = useState<Set<StationKind>>(new Set());
   const [tourOpen, setTourOpen] = useState(false);
+  const [language, setLanguage] = useState(() => readStoredLanguage() ?? 'spanish');
   const radio = useRadio();
   const auth = useAuth();
   const favorites = useFavorites(Boolean(auth.user));
@@ -66,10 +72,10 @@ export function App() {
     }
   }, []);
 
-  const loadStations = useCallback(async () => {
+  const loadStations = useCallback(async (forLanguage: string) => {
     setStations({ status: 'loading' });
     try {
-      const response = await getStations();
+      const response = await getStations(forLanguage);
       setStations({ status: 'ready', data: response.stations });
     } catch (error) {
       setStations({
@@ -81,10 +87,26 @@ export function App() {
 
   useEffect(() => {
     void getHealth()
-      .then(setHealth)
+      .then((next) => {
+        setHealth(next);
+        const catalog = next.languages ?? [];
+        const known = new Set(catalog.map((item) => item.id));
+        const stored = readStoredLanguage();
+        const nextLanguage =
+          stored && (known.size === 0 || known.has(stored))
+            ? stored
+            : known.has(next.targetLanguage)
+              ? next.targetLanguage
+              : catalog[0]?.id ?? stored ?? 'spanish';
+        setLanguage(nextLanguage);
+        writeStoredLanguage(nextLanguage);
+      })
       .catch(() => setHealth(null));
-    void loadStations();
-  }, [loadStations]);
+  }, []);
+
+  useEffect(() => {
+    void loadStations(language);
+  }, [language, loadStations]);
 
   useEffect(() => {
     if (!auth.user) {
@@ -159,7 +181,7 @@ export function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target && ['INPUT', 'TEXTAREA', 'BUTTON'].includes(target.tagName)) return;
+      if (target && ['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT'].includes(target.tagName)) return;
       if (event.code === 'Space' && radio.station) {
         event.preventDefault();
         radio.toggle();
@@ -208,8 +230,23 @@ export function App() {
     requireAccount(() => setFriendsOpen(true));
   }, [requireAccount]);
 
-  const targetLanguage = health?.targetLanguage ?? 'spanish';
+  const languages = health?.languages?.length ? health.languages : FALLBACK_LANGUAGES;
+  const targetLanguage = language;
+  const languageName = languageLabel(targetLanguage, languages);
   const booting = stations.status === 'loading' || !globeReady;
+
+  const changeLanguage = useCallback(
+    (next: string) => {
+      if (next === language) return;
+      writeStoredLanguage(next);
+      radio.stop();
+      setSelected(null);
+      setQuizOpen(false);
+      setCaptionsOpen(false);
+      setLanguage(next);
+    },
+    [language, radio],
+  );
 
   // First visit: open the tour once the globe has finished booting.
   useEffect(() => {
@@ -251,7 +288,7 @@ export function App() {
           <div className="brand__text">
             <h1 className="brand__title">Language Globe</h1>
             <p className="brand__subtitle">
-              {titleCase(targetLanguage)} radio ·{' '}
+              {languageName} radio ·{' '}
               {stations.status === 'ready'
                 ? kindFilter.size === 0
                   ? `${stationList.length.toLocaleString()} stations`
@@ -264,6 +301,7 @@ export function App() {
         </div>
 
         <div className="hud__actions">
+          <LanguagePicker language={targetLanguage} languages={languages} onChange={changeLanguage} />
           <button
             type="button"
             className="button glass"
@@ -380,7 +418,7 @@ export function App() {
         <div className="hud hud--notice">
           <p className="notice notice--error glass">
             {stations.message}{' '}
-            <button type="button" className="link-button" onClick={() => void loadStations()}>
+            <button type="button" className="link-button" onClick={() => void loadStations(language)}>
               Retry
             </button>
           </p>
@@ -407,6 +445,7 @@ export function App() {
       {captionsOpen && radio.station && (
         <CaptionsPanel
           station={radio.station}
+          language={targetLanguage}
           active={captionsOpen}
           enabled={health?.captionsEnabled ?? false}
           paused={quizOpen}

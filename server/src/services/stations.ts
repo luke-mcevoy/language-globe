@@ -155,8 +155,17 @@ export async function getStations(language = config.targetLanguage): Promise<Sta
   }
 }
 
-export async function findStation(stationId: string, language = config.targetLanguage): Promise<Station | undefined> {
-  const { stations } = await getStations(language);
+export async function findStation(stationId: string, language?: string): Promise<Station | undefined> {
+  if (language) {
+    const { stations } = await getStations(language);
+    const hit = stations.find((station) => station.id === stationId);
+    if (hit) return hit;
+  }
+  for (const entry of memoryCache.values()) {
+    const hit = entry.stations.find((station) => station.id === stationId);
+    if (hit) return hit;
+  }
+  const { stations } = await getStations();
   return stations.find((station) => station.id === stationId);
 }
 

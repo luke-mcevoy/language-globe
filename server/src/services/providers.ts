@@ -140,6 +140,24 @@ export async function initializeProviders(): Promise<ProviderState> {
   return providerState;
 }
 
+/** Re-check host whisper so captions recover after a restart without bouncing the API. */
+export async function refreshExternalWhisper(): Promise<void> {
+  if (!config.whisperServerExternal) return;
+  const up = await probeExternalWhisperServer();
+  const whisperCliAvailable =
+    fs.existsSync(config.whisperModelPath) && (await commandExists(config.whisperCliBin));
+  const probes: ProviderProbeState = {
+    localWhisperAvailable: up || whisperCliAvailable,
+    ollamaAvailable: providerState.ollamaAvailable,
+  };
+  providerState = {
+    ...providerState,
+    ...probes,
+    whisperServerAvailable: up,
+    transcribeProvider: resolveTranscribeProvider(config.transcribeProvider, probes),
+  };
+}
+
 export function getProviderStatus(): ProviderState {
   return providerState;
 }

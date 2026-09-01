@@ -135,9 +135,9 @@ code {
 
 .hud--notice {
   left: 50%;
-  top: 20px;
+  top: 88px;
   transform: translateX(-50%);
-  max-width: min(560px, calc(100vw - 40px));
+  max-width: min(420px, calc(100vw - 40px));
 }
 
 .glass {

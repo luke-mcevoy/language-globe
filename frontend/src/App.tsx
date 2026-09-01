@@ -417,10 +417,7 @@ export function App() {
 
       {health && !health.captionsEnabled && (
         <div className="hud hud--notice">
-          <p className="notice glass">
-            Live captions are off — whisper.cpp is not available. Set <code>WHISPER_MODEL_PATH</code> to a
-            ggml model and install <code>whisper-server</code> (or <code>whisper-cli</code>).
-          </p>
+          <p className="notice glass">Live captions are warming up. Radio still works — try CC again in a moment.</p>
         </div>
       )}
 

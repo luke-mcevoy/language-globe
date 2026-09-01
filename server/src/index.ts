@@ -20,6 +20,7 @@ import {
   getProviderStatus,
   initializeProviders,
   quizEnabled,
+  refreshExternalWhisper,
   shutdownProviders,
 } from './services/providers.js';
 import { LEARNING_LANGUAGES } from './lib/languages.js';
@@ -45,18 +46,21 @@ app.addHook('onClose', async () => {
   shutdownProviders();
 });
 
-app.get('/api/health', async (): Promise<HealthResponse> => ({
-  ok: true,
-  quizEnabled: quizEnabled(),
-  captionsEnabled: captionsEnabled(),
-  targetLanguage: config.targetLanguage,
-  languages: [...LEARNING_LANGUAGES],
-  captureSeconds: config.captureSeconds,
-  captionChunkSeconds: config.captionChunkSeconds,
-  transcribeProvider: getProviderStatus().transcribeProvider,
-  quizProvider: getProviderStatus().quizProvider,
-  ffmpegAvailable: await ffmpegAvailable(),
-}));
+app.get('/api/health', async (): Promise<HealthResponse> => {
+  await refreshExternalWhisper();
+  return {
+    ok: true,
+    quizEnabled: quizEnabled(),
+    captionsEnabled: captionsEnabled(),
+    targetLanguage: config.targetLanguage,
+    languages: [...LEARNING_LANGUAGES],
+    captureSeconds: config.captureSeconds,
+    captionChunkSeconds: config.captionChunkSeconds,
+    transcribeProvider: getProviderStatus().transcribeProvider,
+    quizProvider: getProviderStatus().quizProvider,
+    ffmpegAvailable: await ffmpegAvailable(),
+  };
+});
 
 await registerAuthRoutes(app);
 await registerSocialRoutes(app);

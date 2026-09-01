@@ -84,6 +84,9 @@ export const pollCaptionSession = (
 export const stopCaptionSession = (sessionId: string): Promise<void> =>
   request<void>(`/api/captions/session/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
 
+export const captionSessionAudioUrl = (sessionId: string, delaySeconds: number): string =>
+  `${apiBaseUrl()}/api/captions/session/${encodeURIComponent(sessionId)}/audio?delay=${delaySeconds}`;
+
 export const startQuiz = (stationId: string, difficulty: Difficulty): Promise<QuizStartResponse> =>
   request<QuizStartResponse>('/api/quiz/start', {
     method: 'POST',

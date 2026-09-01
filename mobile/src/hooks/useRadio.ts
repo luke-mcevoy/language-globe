@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import type { Station } from '../types';
 
@@ -11,12 +11,18 @@ export interface Radio {
   volume: number;
   muted: boolean;
   deadStations: ReadonlySet<string>;
+  playback: {
+    currentTime: number;
+    playing: boolean;
+    receivedAtMs: number;
+  };
   tune: (station: Station) => void;
   toggle: () => void;
   stop: () => void;
   retry: () => void;
   setVolume: (value: number) => void;
   toggleMute: () => void;
+  setAudioUrlOverride: (url: string | null) => void;
 }
 
 export function useRadio(): Radio {
@@ -28,6 +34,10 @@ export function useRadio(): Radio {
   const [volume, setVolumeState] = useState(0.85);
   const [muted, setMuted] = useState(false);
   const [deadStations, setDeadStations] = useState<ReadonlySet<string>>(() => new Set());
+  const [audioUrlOverride, setAudioUrlOverrideState] = useState<string | null>(null);
+  const [playback, setPlayback] = useState(() => ({ currentTime: 0, playing: false, receivedAtMs: Date.now() }));
+  const [sourceVersion, setSourceVersion] = useState(0);
+  const sourceUriRef = useRef<string | null>(null);
 
   useEffect(() => {
     void setAudioModeAsync({
@@ -41,6 +51,14 @@ export function useRadio(): Radio {
     player.volume = muted ? 0 : volume;
     player.muted = muted;
   }, [muted, player, volume]);
+
+  useEffect(() => {
+    setPlayback({
+      currentTime: playerStatus.currentTime ?? 0,
+      playing: playerStatus.playing,
+      receivedAtMs: Date.now(),
+    });
+  }, [playerStatus.currentTime, playerStatus.playing]);
 
   useEffect(() => {
     if (!station) {
@@ -78,9 +96,28 @@ export function useRadio(): Radio {
     return () => clearTimeout(timer);
   }, [station, status]);
 
+  useEffect(() => {
+    if (!station) return;
+    const uri = audioUrlOverride ?? station.url;
+    if (sourceUriRef.current === uri) return;
+    sourceUriRef.current = uri;
+    setStatus('loading');
+    setError(null);
+    player.replace({ uri, name: station.name });
+    player.setActiveForLockScreen(true, {
+      title: station.name,
+      artist: [station.state, station.country].filter(Boolean).join(', ') || station.country,
+      artworkUrl: station.favicon || undefined,
+    });
+    player.play();
+  }, [audioUrlOverride, player, sourceVersion, station]);
+
   const playStation = useCallback(
     (next: Station) => {
       setStation(next);
+      setAudioUrlOverrideState(null);
+      sourceUriRef.current = null;
+      setSourceVersion((version) => version + 1);
       setStatus('loading');
       setError(null);
       setDeadStations((previous) => {
@@ -89,15 +126,8 @@ export function useRadio(): Radio {
         updated.delete(next.id);
         return updated;
       });
-      player.replace({ uri: next.url, name: next.name });
-      player.setActiveForLockScreen(true, {
-        title: next.name,
-        artist: [next.state, next.country].filter(Boolean).join(', ') || next.country,
-        artworkUrl: next.favicon || undefined,
-      });
-      player.play();
     },
-    [player],
+    [],
   );
 
   const toggle = useCallback(() => {
@@ -114,6 +144,8 @@ export function useRadio(): Radio {
   const stop = useCallback(() => {
     player.pause();
     player.setActiveForLockScreen(false);
+    sourceUriRef.current = null;
+    setAudioUrlOverrideState(null);
     setStation(null);
     setStatus('idle');
     setError(null);
@@ -129,6 +161,10 @@ export function useRadio(): Radio {
     setMuted(clamped === 0);
   }, []);
 
+  const setAudioUrlOverride = useCallback((url: string | null) => {
+    setAudioUrlOverrideState(url);
+  }, []);
+
   const api = useMemo(
     () => ({
       station,
@@ -137,14 +173,16 @@ export function useRadio(): Radio {
       volume,
       muted,
       deadStations,
+      playback,
       tune: playStation,
       toggle,
       stop,
       retry,
       setVolume,
       toggleMute: () => setMuted((value) => !value),
+      setAudioUrlOverride,
     }),
-    [deadStations, error, muted, playStation, retry, station, status, stop, toggle, volume, setVolume],
+    [deadStations, error, muted, playStation, playback, retry, station, status, stop, toggle, volume, setVolume, setAudioUrlOverride],
   );
 
   return api;

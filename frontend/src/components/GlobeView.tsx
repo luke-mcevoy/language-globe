@@ -286,7 +286,7 @@ export function GlobeView({
 
   return (
     <div className={`globe-view${hovered ? ' globe-view--hovering' : ''}`} ref={containerRef}>
-      {size.width > 0 && (
+      {size.width > 2 && size.height > 2 && (
         <Globe
           ref={globeRef}
           width={size.width}

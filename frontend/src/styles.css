@@ -35,6 +35,8 @@ body,
   height: 100%;
   height: 100dvh;
   margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 body {
@@ -85,9 +87,8 @@ code {
 /* ---------------------------------------------------------------- shell -- */
 
 .app {
-  position: relative;
-  height: 100%;
-  height: 100dvh;
+  position: fixed;
+  inset: 0;
   overflow: hidden;
 }
 
@@ -95,6 +96,7 @@ code {
   position: absolute;
   inset: 0;
   cursor: grab;
+  touch-action: none;
 }
 
 .globe-view:active {
@@ -2625,13 +2627,27 @@ code {
     overflow-x: visible;
   }
 
-  .player {
+  /* Only the playing bar is a 4-column grid. The empty hint is a single
+     paragraph — putting it in that grid squeezed it into a 42px column,
+     which wrapped one word per line and made the page tall enough for
+     iOS to scroll the globe off-screen. */
+  .player:not(.player--empty) {
     display: grid;
     grid-template-columns: 42px minmax(0, 1fr) auto auto;
     grid-template-areas: 'play identity cc quiz';
     align-items: center;
     column-gap: 8px;
     row-gap: 0;
+  }
+
+  .player--empty {
+    display: flex;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .player__hint {
+    max-width: 36em;
   }
 
   .player__play {

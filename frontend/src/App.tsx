@@ -7,6 +7,7 @@ import { FriendsPanel } from './components/FriendsPanel';
 import { GlobeView, KIND_COLORS } from './components/GlobeView';
 import { PlayerBar } from './components/PlayerBar';
 import { QuizPanel } from './components/QuizPanel';
+import { WelcomeTour } from './components/WelcomeTour';
 
 // Recharts is only needed once the user opens their progress, so keep it out
 // of the initial bundle.
@@ -20,6 +21,8 @@ import { usePresence } from './hooks/usePresence';
 import { useRadio } from './hooks/useRadio';
 import { titleCase } from './lib/format';
 import type { HealthResponse, Station, StationKind, StatsResponse } from './types';
+
+const TOUR_SEEN_KEY = 'lg-tour-seen';
 
 const ALL_KINDS: StationKind[] = ['talk', 'music', 'unknown'];
 const KIND_LABELS: Record<StationKind, string> = {
@@ -44,6 +47,7 @@ export function App() {
   const [globeReady, setGlobeReady] = useState(false);
   // Empty set = no filter (all kinds shown).
   const [kindFilter, setKindFilter] = useState<Set<StationKind>>(new Set());
+  const [tourOpen, setTourOpen] = useState(false);
   const radio = useRadio();
   const auth = useAuth();
   const favorites = useFavorites(Boolean(auth.user));
@@ -168,6 +172,10 @@ export function App() {
         setFriendsOpen(false);
         auth.closeModal();
         setAccountMenuOpen(false);
+        setTourOpen((open) => {
+          if (open) localStorage.setItem(TOUR_SEEN_KEY, '1');
+          return false;
+        });
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -202,6 +210,18 @@ export function App() {
 
   const targetLanguage = health?.targetLanguage ?? 'spanish';
   const booting = stations.status === 'loading' || !globeReady;
+
+  // First visit: open the tour once the globe has finished booting.
+  useEffect(() => {
+    if (booting) return;
+    if (localStorage.getItem(TOUR_SEEN_KEY)) return;
+    setTourOpen(true);
+  }, [booting]);
+
+  const closeTour = useCallback(() => {
+    localStorage.setItem(TOUR_SEEN_KEY, '1');
+    setTourOpen(false);
+  }, []);
 
   return (
     <div className="app">
@@ -256,6 +276,15 @@ export function App() {
                 {favorites.favorites.length}
               </span>
             )}
+          </button>
+          <button
+            type="button"
+            className="button glass button--icon"
+            onClick={() => setTourOpen(true)}
+            aria-label="What is this app?"
+            title="What is this app?"
+          >
+            ?
           </button>
           {auth.user ? (
             <div className="account">
@@ -418,6 +447,8 @@ export function App() {
       {friendsOpen && auth.user && (
         <FriendsPanel me={auth.user} onClose={() => setFriendsOpen(false)} />
       )}
+
+      {tourOpen && <WelcomeTour onClose={closeTour} onSurprise={surpriseMe} />}
 
       {auth.modalOpen && (
         <AuthModal

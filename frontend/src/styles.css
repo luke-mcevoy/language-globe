@@ -1988,6 +1988,101 @@ code {
   z-index: 12;
 }
 
+/* --------------------------------------------------- welcome tour ------ */
+
+.modal--tour {
+  z-index: 13;
+}
+
+.tour {
+  width: min(460px, 100%);
+  padding: 40px 32px 28px;
+  text-align: center;
+  align-items: center;
+  gap: 0;
+}
+
+.tour__close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+}
+
+.tour__glyph {
+  font-size: 44px;
+  line-height: 1;
+  margin-bottom: 18px;
+  filter: drop-shadow(0 4px 18px rgba(84, 230, 195, 0.25));
+}
+
+.tour__title {
+  font-size: 22px;
+  margin: 0 0 10px;
+}
+
+.tour__body {
+  color: var(--ink-secondary);
+  font-size: 14.5px;
+  line-height: 1.55;
+  margin: 0;
+  min-height: 5.5em;
+}
+
+.tour__hint {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: var(--accent);
+  opacity: 0.85;
+}
+
+.tour__dots {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin: 22px 0 18px;
+}
+
+.tour__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.22);
+  cursor: pointer;
+  transition: background 160ms ease, transform 160ms ease;
+}
+
+.tour__dot--on {
+  background: var(--accent);
+  transform: scale(1.25);
+}
+
+.tour__actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  width: 100%;
+}
+
+.tour__actions .button {
+  min-width: 108px;
+  justify-content: center;
+}
+
+.tour__cta {
+  border-color: rgba(84, 230, 195, 0.55);
+  color: var(--accent);
+}
+
+.button--icon {
+  min-width: 38px;
+  padding-left: 0;
+  padding-right: 0;
+  justify-content: center;
+  font-weight: 700;
+}
+
 .modal__panel--narrow {
   width: min(420px, 100%);
 }

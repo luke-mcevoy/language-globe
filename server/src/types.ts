@@ -203,3 +203,13 @@ export interface VocabResponse {
 export interface VocabLookupResponse {
   entry: VocabEntry;
 }
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  displayName: string;
+}
+
+export interface MeResponse {
+  user: AuthUser | null;
+}

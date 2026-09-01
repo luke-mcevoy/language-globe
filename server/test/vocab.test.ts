@@ -34,7 +34,7 @@ describe('vocab store', () => {
   afterEach(() => db.close());
 
   const input = {
-    userId: 1,
+    userId: '1',
     word: 'sacude',
     translation: 'shakes',
     note: 'verb, from sacudir (to shake)',
@@ -63,21 +63,21 @@ describe('vocab store', () => {
     // First-seen date survives the update.
     expect(second.created_at).toBe('2026-08-26T10:00:00.000Z');
     expect(second.last_looked_up_at).toBe('2026-08-26T11:00:00.000Z');
-    expect(store.list(1)).toHaveLength(1);
+    expect(store.list('1')).toHaveLength(1);
   });
 
   it('lists newest lookups first', () => {
     store.record({ ...input, word: 'uno', now: new Date('2026-08-26T10:00:00Z') });
     store.record({ ...input, word: 'dos', now: new Date('2026-08-26T11:00:00Z') });
-    expect(store.list(1).map((row) => row.word)).toEqual(['dos', 'uno']);
+    expect(store.list('1').map((row) => row.word)).toEqual(['dos', 'uno']);
   });
 
   it('scopes entries to the user and removes by id', () => {
     const record = store.record(input);
-    expect(store.list(2)).toHaveLength(0);
-    expect(store.remove(2, record.id)).toBe(false);
-    expect(store.remove(1, record.id)).toBe(true);
-    expect(store.list(1)).toHaveLength(0);
+    expect(store.list('2')).toHaveLength(0);
+    expect(store.remove('2', record.id)).toBe(false);
+    expect(store.remove('1', record.id)).toBe(true);
+    expect(store.list('1')).toHaveLength(0);
   });
 });
 

@@ -17,15 +17,15 @@ export interface FavoriteRecord {
 
 export interface FavoriteInput {
   station: Station;
-  userId: number;
+  userId: string;
   now?: Date;
 }
 
 export interface FavoritesStore {
-  list(userId: number): FavoriteRecord[];
+  list(userId: string): FavoriteRecord[];
   add(input: FavoriteInput): FavoriteRecord;
-  remove(userId: number, stationId: string): boolean;
-  has(userId: number, stationId: string): boolean;
+  remove(userId: string, stationId: string): boolean;
+  has(userId: string, stationId: string): boolean;
 }
 
 /**

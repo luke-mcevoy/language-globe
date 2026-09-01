@@ -1,9 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import Fastify from 'fastify';
+import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import { config, serverRoot } from './config.js';
+import { authStore } from './db.js';
+import { registerAuthRoutes } from './routes/auth.js';
 import { registerCaptionRoutes } from './routes/captions.js';
 import { registerFavoriteRoutes } from './routes/favorites.js';
 import { registerQuizRoutes } from './routes/quiz.js';
@@ -29,7 +32,9 @@ const app = Fastify({
   connectionTimeout: 0,
 });
 
-await app.register(cors, { origin: true });
+await app.register(cors, { origin: true, credentials: true });
+await app.register(cookie);
+app.decorate('authStore', authStore);
 await initializeProviders();
 
 app.addHook('onClose', async () => {
@@ -48,6 +53,7 @@ app.get('/api/health', async (): Promise<HealthResponse> => ({
   ffmpegAvailable: await ffmpegAvailable(),
 }));
 
+await registerAuthRoutes(app);
 await registerStationRoutes(app);
 await registerCaptionRoutes(app);
 await registerQuizRoutes(app);

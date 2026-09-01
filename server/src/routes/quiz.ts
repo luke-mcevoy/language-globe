@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { config } from '../config.js';
 import { getQuiz, insertQuiz, recordResult } from '../db.js';
 import { gradeQuiz } from '../lib/grading.js';
+import { requireUser } from '../lib/resolveUser.js';
 import { countWords } from '../lib/text.js';
 import { CaptureError, captureStream } from '../services/capture.js';
 import { generateQuizQuestions, quizEnabled, transcribeAudio } from '../services/providers.js';
@@ -21,6 +22,9 @@ function parseDifficulty(value: unknown): Difficulty {
 
 export async function registerQuizRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Body: { stationId?: string; difficulty?: string } }>('/api/quiz/start', async (request, reply) => {
+    const user = requireUser(request, reply);
+    if (!user) return;
+
     if (!quizEnabled()) {
       return reply.status(503).send({
         error: 'quiz_disabled',
@@ -85,7 +89,7 @@ export async function registerQuizRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const quizId = randomUUID();
-    insertQuiz({
+    insertQuiz(user.id, {
       id: quizId,
       stationId: station.id,
       stationName: station.name,
@@ -108,12 +112,15 @@ export async function registerQuizRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post<{ Body: { quizId?: string; answers?: unknown } }>('/api/quiz/submit', async (request, reply) => {
+    const user = requireUser(request, reply);
+    if (!user) return;
+
     const quizId = request.body?.quizId;
     if (typeof quizId !== 'string' || quizId.length === 0) {
       return reply.status(400).send({ error: 'bad_request', message: 'quizId is required.' });
     }
 
-    const stored = getQuiz(quizId);
+    const stored = getQuiz(user.id, quizId);
     if (!stored) {
       return reply.status(404).send({ error: 'unknown_quiz', message: 'That quiz has expired or never existed.' });
     }
@@ -127,7 +134,7 @@ export async function registerQuizRoutes(app: FastifyInstance): Promise<void> {
 
     const graded = gradeQuiz(questions, request.body?.answers);
 
-    recordResult({
+    recordResult(user.id, {
       quizId,
       stationId: stored.station_id,
       stationName: stored.station_name,
@@ -150,7 +157,10 @@ export async function registerQuizRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get<{ Params: { quizId: string } }>('/api/quiz/:quizId/transcript', async (request, reply) => {
-    const stored = getQuiz(request.params.quizId);
+    const user = requireUser(request, reply);
+    if (!user) return;
+
+    const stored = getQuiz(user.id, request.params.quizId);
     if (!stored) return reply.status(404).send({ error: 'unknown_quiz', message: 'No such quiz.' });
     return { quizId: stored.id, transcript: stored.transcript, difficulty: stored.difficulty };
   });

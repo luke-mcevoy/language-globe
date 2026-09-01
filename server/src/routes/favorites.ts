@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
-import { CURRENT_USER_ID, favoritesStore } from '../db.js';
+import { favoritesStore } from '../db.js';
 import type { FavoriteRecord } from '../lib/favorites.js';
+import { requireUser } from '../lib/resolveUser.js';
 import { getStations } from '../services/stations.js';
 import type { Favorite, FavoritesResponse, Station, StationKind } from '../types.js';
 
@@ -55,13 +56,18 @@ async function hydrate(records: FavoriteRecord[]): Promise<Favorite[]> {
 }
 
 export async function registerFavoriteRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/api/favorites', async (): Promise<FavoritesResponse> => {
-    const records = favoritesStore.list(CURRENT_USER_ID);
+  app.get('/api/favorites', async (request, reply): Promise<FavoritesResponse | undefined> => {
+    const user = requireUser(request, reply);
+    if (!user) return;
+    const records = favoritesStore.list(user.id);
     const favorites = await hydrate(records);
     return { favorites };
   });
 
   app.put<{ Params: { stationId: string } }>('/api/favorites/:stationId', async (request, reply) => {
+    const user = requireUser(request, reply);
+    if (!user) return;
+
     const stationId = request.params.stationId;
     if (!stationId) {
       return reply.status(400).send({ error: 'bad_request', message: 'stationId is required.' });
@@ -83,13 +89,15 @@ export async function registerFavoriteRoutes(app: FastifyInstance): Promise<void
       return reply.status(404).send({ error: 'unknown_station', message: 'That station is no longer in the index.' });
     }
 
-    const record = favoritesStore.add({ station, userId: CURRENT_USER_ID });
+    const record = favoritesStore.add({ station, userId: user.id });
     const favorite: Favorite = { createdAt: record.created_at, missing: false, station };
     return favorite;
   });
 
   app.delete<{ Params: { stationId: string } }>('/api/favorites/:stationId', async (request, reply) => {
-    favoritesStore.remove(CURRENT_USER_ID, request.params.stationId);
+    const user = requireUser(request, reply);
+    if (!user) return;
+    favoritesStore.remove(user.id, request.params.stationId);
     return reply.status(204).send();
   });
 }

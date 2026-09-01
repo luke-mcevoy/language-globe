@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import { CURRENT_USER_ID, vocabStore } from '../db.js';
+import { vocabStore } from '../db.js';
+import { requireUser } from '../lib/resolveUser.js';
 import { normalizeWord, type VocabRecord } from '../lib/vocab.js';
 import { quizEnabled, translateWord } from '../services/providers.js';
 import type { VocabEntry, VocabLookupResponse, VocabResponse } from '../types.js';
@@ -25,11 +26,16 @@ interface LookupBody {
 }
 
 export async function registerVocabRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/api/vocab', async (): Promise<VocabResponse> => ({
-    words: vocabStore.list(CURRENT_USER_ID).map(toEntry),
-  }));
+  app.get('/api/vocab', async (request, reply): Promise<VocabResponse | undefined> => {
+    const user = requireUser(request, reply);
+    if (!user) return;
+    return { words: vocabStore.list(user.id).map(toEntry) };
+  });
 
   app.post<{ Body: LookupBody }>('/api/vocab/lookup', async (request, reply) => {
+    const user = requireUser(request, reply);
+    if (!user) return;
+
     const word = typeof request.body?.word === 'string' ? request.body.word.trim() : '';
     const context = typeof request.body?.context === 'string' ? request.body.context.slice(0, 600) : '';
     const stationName = typeof request.body?.stationName === 'string' ? request.body.stationName.slice(0, 120) : '';
@@ -57,7 +63,7 @@ export async function registerVocabRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const record = vocabStore.record({
-      userId: CURRENT_USER_ID,
+      userId: user.id,
       word,
       translation: translation.translation,
       note: translation.note,
@@ -69,11 +75,14 @@ export async function registerVocabRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.delete<{ Params: { id: string } }>('/api/vocab/:id', async (request, reply) => {
+    const user = requireUser(request, reply);
+    if (!user) return;
+
     const id = Number(request.params.id);
     if (!Number.isInteger(id)) {
       return reply.status(400).send({ error: 'bad_request', message: 'A numeric id is required.' });
     }
-    vocabStore.remove(CURRENT_USER_ID, id);
+    vocabStore.remove(user.id, id);
     return reply.status(204).send();
   });
 }

@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.js';
+import { createAuthStore } from './lib/auth.js';
 import { createFavoritesStore } from './lib/favorites.js';
 import { createVocabStore } from './lib/vocab.js';
 import type { Difficulty, QuizQuestion } from './types.js';
@@ -12,13 +13,14 @@ fs.mkdirSync(path.dirname(config.dbPath), { recursive: true });
 export const db = new Database(config.dbPath);
 db.pragma('journal_mode = WAL');
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id         INTEGER PRIMARY KEY,
-    name       TEXT NOT NULL DEFAULT 'you',
-    created_at TEXT NOT NULL
-  );
+/**
+ * Accounts own the `users` table (uuid ids + credentials). Existing
+ * single-user progress rows stay on whatever user_id they already have;
+ * new accounts start empty.
+ */
+export const authStore = createAuthStore(db);
 
+db.exec(`
   CREATE TABLE IF NOT EXISTS quizzes (
     id             TEXT PRIMARY KEY,
     user_id        INTEGER NOT NULL REFERENCES users(id),
@@ -58,15 +60,6 @@ db.exec(`
   );
 `);
 
-/** Single-user for now; the row exists so multi-user is a migration, not a redesign. */
-export const CURRENT_USER_ID = 1;
-
-db.prepare('INSERT OR IGNORE INTO users (id, name, created_at) VALUES (?, ?, ?)').run(
-  CURRENT_USER_ID,
-  'you',
-  new Date().toISOString(),
-);
-
 /**
  * Favorites live in the same DB, but the table + statements are created inside
  * the store so the same code can be pointed at an in-memory DB in tests.
@@ -99,14 +92,14 @@ export interface NewQuiz {
   questions: QuizQuestion[];
 }
 
-export function insertQuiz(quiz: NewQuiz): void {
+export function insertQuiz(userId: string, quiz: NewQuiz): void {
   db.prepare(
     `INSERT INTO quizzes
        (id, user_id, station_id, station_name, country, country_code, difficulty, transcript, questions_json, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     quiz.id,
-    CURRENT_USER_ID,
+    userId,
     quiz.stationId,
     quiz.stationName,
     quiz.country,
@@ -118,8 +111,8 @@ export function insertQuiz(quiz: NewQuiz): void {
   );
 }
 
-export function getQuiz(quizId: string): StoredQuiz | undefined {
-  return db.prepare('SELECT * FROM quizzes WHERE id = ? AND user_id = ?').get(quizId, CURRENT_USER_ID) as
+export function getQuiz(userId: string, quizId: string): StoredQuiz | undefined {
+  return db.prepare('SELECT * FROM quizzes WHERE id = ? AND user_id = ?').get(quizId, userId) as
     | StoredQuiz
     | undefined;
 }
@@ -140,17 +133,17 @@ export interface RecordedResult {
  * Records a graded attempt. Re-submitting the same quiz overwrites the earlier
  * result rather than inflating the stats with a second attempt.
  */
-export function recordResult(result: RecordedResult): void {
+export function recordResult(userId: string, result: RecordedResult): void {
   const now = new Date().toISOString();
   const tx = db.transaction(() => {
-    db.prepare('DELETE FROM quiz_results WHERE quiz_id = ? AND user_id = ?').run(result.quizId, CURRENT_USER_ID);
+    db.prepare('DELETE FROM quiz_results WHERE quiz_id = ? AND user_id = ?').run(result.quizId, userId);
     db.prepare(
       `INSERT INTO quiz_results
          (user_id, quiz_id, station_id, station_name, country, country_code, difficulty,
           n_questions, n_correct, transcript_words, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
-      CURRENT_USER_ID,
+      userId,
       result.quizId,
       result.stationId,
       result.stationName,
@@ -167,13 +160,13 @@ export function recordResult(result: RecordedResult): void {
   tx();
 }
 
-export function listResults(): QuizResultRow[] {
+export function listResults(userId: string): QuizResultRow[] {
   return db
     .prepare(
       `SELECT created_at, country_code, country, n_questions, n_correct, transcript_words
        FROM quiz_results WHERE user_id = ? ORDER BY created_at ASC`,
     )
-    .all(CURRENT_USER_ID) as QuizResultRow[];
+    .all(userId) as QuizResultRow[];
 }
 
 export function readStationsCache(key: string): { payload: string; fetchedAt: number } | null {

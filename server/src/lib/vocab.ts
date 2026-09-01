@@ -15,7 +15,7 @@ export interface VocabRecord {
 }
 
 export interface VocabInput {
-  userId: number;
+  userId: string;
   word: string;
   translation: string;
   note: string;
@@ -26,8 +26,8 @@ export interface VocabInput {
 
 export interface VocabStore {
   record(input: VocabInput): VocabRecord;
-  list(userId: number, limit?: number): VocabRecord[];
-  remove(userId: number, id: number): boolean;
+  list(userId: string, limit?: number): VocabRecord[];
+  remove(userId: string, id: number): boolean;
 }
 
 /**

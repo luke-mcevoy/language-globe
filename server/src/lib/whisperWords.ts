@@ -7,9 +7,9 @@
  * leading ASCII space. Punctuation tokens carry no space and belong to the
  * preceding word.
  *
- * OpenAI's whisper API and some whisper.cpp server builds already emit
- * word-level entries directly, so extractWords is used to normalize whichever
- * shape we get into { word, startMs, endMs }.
+ * Some whisper.cpp server builds already emit word-level entries directly, so
+ * extractWords is used to normalize whichever shape we get into
+ * { word, startMs, endMs }.
  */
 
 export interface WordTiming {
@@ -156,7 +156,7 @@ function normalizeSeconds(word: FlatWord): { startMs: number; endMs: number } | 
 
 /**
  * Normalizes a `words` array from whichever shape the provider hands back
- * (OpenAI verbose_json, whisper.cpp server verbose_json, direct token list).
+ * (whisper.cpp server verbose_json, or a direct token list).
  * Returns null when no entries had usable timings so the caller can fall
  * back to chunk-level captions.
  *
@@ -164,7 +164,7 @@ function normalizeSeconds(word: FlatWord): { startMs: number; endMs: number } | 
  * as "S", "us", "cr", "íb", "ete"), with a leading space marking genuine word
  * starts — trimming each entry would shatter words into fragments. When any
  * entry carries that leading-space marker we run the token merge instead;
- * OpenAI-style entries (real words, no space prefixes) keep the simple path.
+ * already-merged word entries (real words, no space prefixes) keep the simple path.
  */
 export function normalizeFlatWords(words: unknown): WordTiming[] | null {
   if (!Array.isArray(words) || words.length === 0) return null;

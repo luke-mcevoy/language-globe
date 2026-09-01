@@ -19,9 +19,6 @@ export const config = {
   port: num(process.env.PORT, 8787),
   host: process.env.HOST ?? '127.0.0.1',
   targetLanguage: (process.env.TARGET_LANGUAGE ?? 'spanish').toLowerCase(),
-  openaiApiKey: process.env.OPENAI_API_KEY?.trim() ?? '',
-  quizModel: process.env.OPENAI_QUIZ_MODEL ?? 'gpt-4o-mini',
-  transcribeModel: process.env.OPENAI_TRANSCRIBE_MODEL ?? 'whisper-1',
   transcribeProvider: process.env.TRANSCRIBE_PROVIDER ?? 'auto',
   quizProvider: process.env.QUIZ_PROVIDER ?? 'auto',
   whisperModelPath: process.env.WHISPER_MODEL_PATH ?? path.join(serverRoot, 'models/ggml-large-v3-turbo.bin'),
@@ -38,8 +35,6 @@ export const config = {
    */
   whisperDtwPreset: process.env.WHISPER_DTW_PRESET ?? 'large.v3.turbo',
   ollamaUrl: process.env.OLLAMA_URL ?? 'http://127.0.0.1:11434',
-  /** Local SDXL-Turbo sidecar (scene-server/run.sh) for ambient scene art. */
-  sceneServerUrl: process.env.SCENE_SERVER_URL ?? 'http://127.0.0.1:8790',
   ollamaModel: process.env.OLLAMA_MODEL ?? 'qwen2.5:7b-instruct',
   dbPath: path.isAbsolute(dbPath) ? dbPath : path.join(serverRoot, dbPath),
   tmpDir: path.join(serverRoot, 'tmp'),

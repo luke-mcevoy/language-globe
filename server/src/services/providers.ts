@@ -15,31 +15,23 @@ import {
 import type { Difficulty, QuizQuestion } from '../types.js';
 import {
   buildQuizPrompt,
-  buildSceneDescriptionPrompt,
   buildTranslationPrompt,
-  describeScene as describeSceneOpenAi,
-  generateQuestions as generateOpenAiQuestions,
-  parseSceneDescription,
   parseWordTranslation,
   QUESTION_SCHEMA,
-  SCENE_SCHEMA,
   TRANSLATION_SCHEMA,
-  transcribeVerbose as transcribeVerboseOpenAi,
-  translateWord as translateWordOpenAi,
   type TranscribeResult,
   type WordTranslation,
-} from './openai.js';
+} from '../lib/prompts.js';
 
-export type { TranscribeResult } from './openai.js';
+export type { TranscribeResult } from '../lib/prompts.js';
 
-export type TranscribeProvider = 'local-whisper' | 'openai' | 'unavailable';
-export type QuizProvider = 'ollama' | 'openai' | 'unavailable';
+export type TranscribeProvider = 'local-whisper' | 'unavailable';
+export type QuizProvider = 'ollama' | 'unavailable';
 
-type TranscribeMode = 'auto' | 'local' | 'openai';
-type QuizMode = 'auto' | 'ollama' | 'openai';
+type TranscribeMode = 'auto' | 'local';
+type QuizMode = 'auto' | 'ollama';
 
 export interface ProviderProbeState {
-  openaiAvailable: boolean;
   localWhisperAvailable: boolean;
   ollamaAvailable: boolean;
 }
@@ -47,19 +39,17 @@ export interface ProviderProbeState {
 interface ProviderState {
   transcribeProvider: TranscribeProvider;
   quizProvider: QuizProvider;
-  openaiAvailable: boolean;
   localWhisperAvailable: boolean;
   whisperServerAvailable: boolean;
   ollamaAvailable: boolean;
 }
 
-const TRANSCRIBE_MODES = new Set(['auto', 'local', 'openai']);
-const QUIZ_MODES = new Set(['auto', 'ollama', 'openai']);
+const TRANSCRIBE_MODES = new Set(['auto', 'local']);
+const QUIZ_MODES = new Set(['auto', 'ollama']);
 
 let providerState: ProviderState = {
   transcribeProvider: 'unavailable',
   quizProvider: 'unavailable',
-  openaiAvailable: false,
   localWhisperAvailable: false,
   whisperServerAvailable: false,
   ollamaAvailable: false,
@@ -77,25 +67,13 @@ function quizMode(value: string): QuizMode {
 }
 
 export function resolveTranscribeProvider(mode: string, probes: ProviderProbeState): TranscribeProvider {
-  const selected = transcribeMode(mode);
-  if (selected === 'openai') return probes.openaiAvailable ? 'openai' : 'unavailable';
-  if (selected === 'local') {
-    if (probes.localWhisperAvailable) return 'local-whisper';
-    return probes.openaiAvailable ? 'openai' : 'unavailable';
-  }
-  if (probes.localWhisperAvailable) return 'local-whisper';
-  return probes.openaiAvailable ? 'openai' : 'unavailable';
+  transcribeMode(mode); // unknown values collapse to auto
+  return probes.localWhisperAvailable ? 'local-whisper' : 'unavailable';
 }
 
 export function resolveQuizProvider(mode: string, probes: ProviderProbeState): QuizProvider {
-  const selected = quizMode(mode);
-  if (selected === 'openai') return probes.openaiAvailable ? 'openai' : 'unavailable';
-  if (selected === 'ollama') {
-    if (probes.ollamaAvailable) return 'ollama';
-    return probes.openaiAvailable ? 'openai' : 'unavailable';
-  }
-  if (probes.ollamaAvailable) return 'ollama';
-  return probes.openaiAvailable ? 'openai' : 'unavailable';
+  quizMode(mode); // unknown values collapse to auto
+  return probes.ollamaAvailable ? 'ollama' : 'unavailable';
 }
 
 async function commandExists(command: string): Promise<boolean> {
@@ -126,12 +104,10 @@ async function probeOllama(): Promise<boolean> {
 }
 
 export async function initializeProviders(): Promise<ProviderState> {
-  const openaiAvailable = config.openaiApiKey.length > 0;
   const whisperModelAvailable = fs.existsSync(config.whisperModelPath);
   const whisperServerAvailable = whisperModelAvailable && fs.existsSync(config.whisperServerBin);
   const whisperCliAvailable = whisperModelAvailable && (await commandExists(config.whisperCliBin));
   const probes: ProviderProbeState = {
-    openaiAvailable,
     localWhisperAvailable: whisperServerAvailable || whisperCliAvailable,
     ollamaAvailable: await probeOllama(),
   };
@@ -249,7 +225,7 @@ interface WhisperServerVerboseResponse {
 }
 
 function extractWordsFromWhisperServer(payload: WhisperServerVerboseResponse): WordTiming[] | null {
-  // Newer whisper.cpp server builds expose an OpenAI-shape `words` array.
+  // Newer whisper.cpp server builds expose a flat `words` array.
   const top = normalizeFlatWords(payload.words);
   if (top) return top;
 
@@ -366,15 +342,9 @@ async function transcribeLocal(filePath: string): Promise<TranscribeResult> {
 }
 
 export async function transcribeChunk(filePath: string): Promise<TranscribeResult> {
-  const primary = providerState.transcribeProvider;
-  if (primary === 'local-whisper') {
-    try {
-      return await transcribeLocal(filePath);
-    } catch (error) {
-      if (!providerState.openaiAvailable) throw error;
-    }
+  if (providerState.transcribeProvider === 'local-whisper') {
+    return transcribeLocal(filePath);
   }
-  if (providerState.openaiAvailable) return transcribeVerboseOpenAi(filePath);
   throw new Error('No transcription provider is available.');
 }
 
@@ -431,15 +401,9 @@ async function generateLocalQuestions(transcript: string, difficulty: Difficulty
 }
 
 export async function generateQuizQuestions(transcript: string, difficulty: Difficulty): Promise<QuizQuestion[]> {
-  const primary = providerState.quizProvider;
-  if (primary === 'ollama') {
-    try {
-      return await generateLocalQuestions(transcript, difficulty);
-    } catch (error) {
-      if (!providerState.openaiAvailable) throw error;
-    }
+  if (providerState.quizProvider === 'ollama') {
+    return generateLocalQuestions(transcript, difficulty);
   }
-  if (providerState.openaiAvailable) return generateOpenAiQuestions(transcript, difficulty);
   throw new Error('No quiz generation provider is available.');
 }
 
@@ -473,62 +437,12 @@ async function translateWordOllama(word: string, context: string): Promise<WordT
   return translation;
 }
 
-/** Word lookups ride the quiz provider: same models, same fallback order. */
+/** Word lookups ride the quiz provider: same local model. */
 export async function translateWord(word: string, context: string): Promise<WordTranslation> {
-  const primary = providerState.quizProvider;
-  if (primary === 'ollama') {
-    try {
-      return await translateWordOllama(word, context);
-    } catch (error) {
-      if (!providerState.openaiAvailable) throw error;
-    }
+  if (providerState.quizProvider === 'ollama') {
+    return translateWordOllama(word, context);
   }
-  if (providerState.openaiAvailable) return translateWordOpenAi(word, context);
   throw new Error('No translation provider is available.');
-}
-
-async function describeSceneOllama(transcript: string): Promise<string> {
-  const response = await fetch(new URL('/api/chat', config.ollamaUrl), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: config.ollamaModel,
-      stream: false,
-      format: SCENE_SCHEMA,
-      options: { temperature: 0.6 },
-      messages: [
-        { role: 'system', content: 'You write image-generation prompts and reply only with JSON matching the schema.' },
-        { role: 'user', content: buildSceneDescriptionPrompt(transcript, config.targetLanguage) },
-      ],
-    }),
-  });
-  if (!response.ok) throw new Error(`Ollama responded ${response.status}`);
-
-  const payload = (await response.json()) as { message?: { content?: unknown } };
-  const content = typeof payload.message?.content === 'string' ? payload.message.content : '';
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(content);
-  } catch {
-    throw new Error('Ollama did not return valid JSON');
-  }
-  const prompt = parseSceneDescription(parsed);
-  if (!prompt) throw new Error('Ollama returned no usable scene prompt');
-  return prompt;
-}
-
-/** Scene descriptions ride the quiz provider: same models, same fallback order. */
-export async function describeScene(transcript: string): Promise<string> {
-  const primary = providerState.quizProvider;
-  if (primary === 'ollama') {
-    try {
-      return await describeSceneOllama(transcript);
-    } catch (error) {
-      if (!providerState.openaiAvailable) throw error;
-    }
-  }
-  if (providerState.openaiAvailable) return describeSceneOpenAi(transcript);
-  throw new Error('No scene-description provider is available.');
 }
 
 export function shutdownProviders(): void {

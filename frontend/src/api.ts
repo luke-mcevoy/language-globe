@@ -7,7 +7,6 @@ import type {
   HealthResponse,
   QuizStartResponse,
   QuizSubmitResponse,
-  SceneResponse,
   StationsResponse,
   StatsResponse,
   VocabLookupResponse,
@@ -105,10 +104,3 @@ export const getVocab = (): Promise<VocabResponse> => request<VocabResponse>('/a
 
 export const removeVocabWord = (id: number): Promise<void> =>
   request<void>(`/api/vocab/${id}`, { method: 'DELETE' });
-
-export const generateScene = (sessionId: string, signal?: AbortSignal): Promise<SceneResponse> =>
-  request<SceneResponse>('/api/scene', {
-    method: 'POST',
-    body: JSON.stringify({ sessionId }),
-    signal,
-  });

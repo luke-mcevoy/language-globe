@@ -1,7 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { CaptureError } from '../services/capture.js';
 import { captionSessions } from '../services/captionSessions.js';
-import { describeOpenAiError } from '../services/openai.js';
 import { captionsEnabled } from '../services/providers.js';
 import { getStations } from '../services/stations.js';
 import type { CaptionPollResponse, CaptionSessionCreatedResponse } from '../types.js';
@@ -23,7 +22,8 @@ export async function registerCaptionRoutes(app: FastifyInstance): Promise<void>
     if (!captionsEnabled()) {
       return reply.status(503).send({
         error: 'captions_disabled',
-        message: 'No transcription provider is available. Install local Whisper or set OPENAI_API_KEY in server/.env.',
+        message:
+          'Captions need whisper.cpp. Set WHISPER_MODEL_PATH to a ggml model and install whisper-server (or whisper-cli).',
       });
     }
 
@@ -70,8 +70,6 @@ export async function registerCaptionRoutes(app: FastifyInstance): Promise<void>
         return response;
       } catch (error) {
         request.log.error({ err: error, sessionId: request.params.id }, 'caption polling failed');
-        const known = describeOpenAiError(error);
-        if (known) return reply.status(502).send({ error: known.code, message: known.message });
         return reply.status(502).send({
           error: 'transcription_failed',
           message: 'Could not transcribe this caption chunk. Captions will retry shortly.',

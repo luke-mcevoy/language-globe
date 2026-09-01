@@ -193,11 +193,20 @@ export function App() {
         </div>
       </div>
 
+      {health && !health.captionsEnabled && (
+        <div className="hud hud--notice">
+          <p className="notice glass">
+            Live captions are off — whisper.cpp is not available. Set <code>WHISPER_MODEL_PATH</code> to a
+            ggml model and install <code>whisper-server</code> (or <code>whisper-cli</code>).
+          </p>
+        </div>
+      )}
+
       {health && !health.quizEnabled && (
         <div className="hud hud--notice">
           <p className="notice glass">
-            Quizzes are off — local models are unavailable and no <code>OPENAI_API_KEY</code> is set on the
-            server.
+            Quizzes and word lookup are off — Ollama is not running. Install it and run{' '}
+            <code>ollama pull qwen2.5:7b-instruct</code>.
           </p>
         </div>
       )}
@@ -239,7 +248,6 @@ export function App() {
           getAudioElement={radio.getAudioElement}
           onPauseAudio={radio.pause}
           onResumeAudio={radio.resume}
-          scenesEnabled={health?.scenesEnabled ?? false}
         />
       )}
 

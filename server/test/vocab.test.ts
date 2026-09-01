@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createVocabStore, normalizeWord, type VocabStore } from '../src/lib/vocab.js';
-import { parseWordTranslation } from '../src/services/openai.js';
+import { parseWordTranslation } from '../src/lib/prompts.js';
 
 describe('normalizeWord', () => {
   it('lowercases and strips surrounding punctuation', () => {

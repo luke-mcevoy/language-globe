@@ -141,11 +141,9 @@ export interface HealthResponse {
   targetLanguage: string;
   captureSeconds: number;
   captionChunkSeconds: number;
-  transcribeProvider: string;
-  quizProvider: string;
+  transcribeProvider: 'local-whisper' | 'unavailable';
+  quizProvider: 'ollama' | 'unavailable';
   ffmpegAvailable: boolean;
-  /** True when the local SDXL-Turbo sidecar is reachable. */
-  scenesEnabled: boolean;
 }
 
 export interface Favorite {
@@ -177,15 +175,4 @@ export interface VocabResponse {
 
 export interface VocabLookupResponse {
   entry: VocabEntry;
-}
-
-/** An AI-drawn ambient illustration of what the station is broadcasting. */
-export interface SceneResponse {
-  /** PNG as a data URL, ready for an <Image source={{ uri }}>. */
-  image: string;
-  /** The exact prompt the image model received (provenance for the UI). */
-  prompt: string;
-  basedOn: 'transcript' | 'station';
-  /** Generation time reported by the sidecar. */
-  seconds: number;
 }

@@ -36,26 +36,17 @@ Accuracy over time, daily streaks, countries you've quizzed in, total words hear
 
 ![Progress panel with stats, passport, and the vocab list](docs/media/progress.png)
 
-## Local models first
+## Local models only
 
-Captions and quizzes prefer models running on your machine and fall back to OpenAI only when a key is configured:
+The app runs strictly on models on your machine. If a local model is missing, that feature is disabled — there is no cloud fallback.
 
-| Task | Local (preferred) | Fallback |
-| --- | --- | --- |
-| Transcription + word timing | whisper.cpp (`whisper-server`, DTW alignment) | OpenAI Whisper |
-| Quiz generation | Ollama (`qwen2.5:7b-instruct`) | OpenAI chat model |
-| Word translation | Ollama (`qwen2.5:7b-instruct`) | OpenAI chat model |
-| Ambient scene art | SDXL-Turbo (`scene-server/`, local only) | — |
+| Task | Local model |
+| --- | --- |
+| Transcription + word timing | whisper.cpp (`whisper-server`, DTW alignment) |
+| Quiz generation | Ollama (`qwen2.5:7b-instruct`) |
+| Word translation | Ollama (`qwen2.5:7b-instruct`) |
 
-With whisper.cpp and Ollama running, the whole experience — captions, karaoke, lookups, quizzes — works with **no API key and no per-use cost**.
-
-### Ambient scenes
-
-With captions on, the panel draws a stylized illustration of whatever the station is talking about, redrawn from the live transcript every ~45 s (Ollama writes the visual prompt, SDXL-Turbo paints it — a few seconds per image on Apple Silicon). It is entirely optional and turns on when the sidecar is running:
-
-```bash
-scene-server/run.sh   # first run creates a venv and downloads ~7 GB of weights
-```
+Install whisper.cpp (a ggml model at `WHISPER_MODEL_PATH`, plus `whisper-server` or `whisper-cli`) for captions. Install Ollama and run `ollama pull qwen2.5:7b-instruct` for quizzes and word lookup.
 
 ## Setup
 
@@ -67,18 +58,15 @@ npm run dev
 
 The Vite frontend runs on `http://127.0.0.1:5173` and proxies API requests to the Fastify server on `http://127.0.0.1:8787`.
 
-The globe, station search, player, favorites, and stats work with no configuration. Captions, lookups, and quizzes need at least one model provider — local models via `WHISPER_SERVER_BIN`/`WHISPER_MODEL_PATH` and `OLLAMA_URL`, or:
-
-```bash
-OPENAI_API_KEY=your_key_here
-```
+The globe, station search, player, favorites, and stats work with no configuration. Captions need whisper.cpp (`WHISPER_MODEL_PATH` plus `whisper-server` or `whisper-cli`). Quizzes and word lookup need Ollama at `OLLAMA_URL`.
 
 Useful environment settings:
 
 ```bash
 TARGET_LANGUAGE=spanish
-OPENAI_QUIZ_MODEL=gpt-4o-mini
-OPENAI_TRANSCRIBE_MODEL=whisper-1
+WHISPER_MODEL_PATH=models/ggml-large-v3-turbo.bin
+OLLAMA_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=qwen2.5:7b-instruct
 CAPTURE_SECONDS=60
 DB_PATH=data/language-globe.sqlite
 PORT=8787
@@ -96,17 +84,16 @@ docker run -p 8787:8787 ghcr.io/luke-mcevoy/language-globe:latest
 # open http://localhost:8787
 ```
 
-The globe, live radio, favorites, and stats work with no configuration. Captions and quizzes need a model provider:
+The globe, live radio, favorites, and stats work with no configuration. The published container currently ships **without whisper.cpp**, so live captions are unavailable in the container until a later image bundles it. Quizzes and word lookup work by pointing `OLLAMA_URL` at a reachable Ollama:
 
 ```bash
 docker run -p 8787:8787 \
-  -e OPENAI_API_KEY=your_key_here \           # transcription + quiz fallback
-  -e OLLAMA_URL=http://host.docker.internal:11434 \  # optional: local quiz model
+  -e OLLAMA_URL=http://host.docker.internal:11434 \
   -v language-globe-data:/data \              # persist quiz history across restarts
   ghcr.io/luke-mcevoy/language-globe:latest
 ```
 
-Local whisper.cpp transcription is not bundled (the model weighs ~1.5 GB); inside Docker, transcription uses OpenAI when a key is set. To build the image yourself: `docker build -t language-globe .`
+To build the image yourself: `docker build -t language-globe .`
 
 ## Mobile
 

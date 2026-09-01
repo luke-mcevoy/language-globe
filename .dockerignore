@@ -11,4 +11,3 @@ server/tmp
 server/models
 server/.env
 *.md
-scene-server/

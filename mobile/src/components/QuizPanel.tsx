@@ -168,8 +168,8 @@ export function QuizPanel({
 function DisabledState() {
   return (
     <Center
-      title="Quizzes need a model provider"
-      detail="Start local Whisper and Ollama, or add OPENAI_API_KEY to server/.env and restart the server. Radio and progress still work without them."
+      title="Quizzes need Ollama"
+      detail="Install Ollama and run ollama pull qwen2.5:7b-instruct, then restart the server. Radio and progress still work without it."
     />
   );
 }

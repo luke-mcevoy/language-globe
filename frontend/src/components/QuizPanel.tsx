@@ -214,10 +214,10 @@ function DisabledState() {
       <div className="quiz__key-icon" aria-hidden="true">
         🔑
       </div>
-      <p className="quiz__error-title">Quizzes need a model provider</p>
+      <p className="quiz__error-title">Quizzes need Ollama</p>
       <p className="quiz__error-message">
-        Start the local Whisper and Ollama providers, or add <code>OPENAI_API_KEY</code> to <code>server/.env</code>
-        and restart the server. Everything else — the globe, the radio, your stats — works without them.
+        Install Ollama and run <code>ollama pull qwen2.5:7b-instruct</code>, then restart the server.
+        Everything else — the globe, the radio, your stats — works without it.
       </p>
     </div>
   );

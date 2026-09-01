@@ -3,7 +3,7 @@ import fsp from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 import { config } from '../config.js';
-import { captionText, MUSIC_CAPTION_TEXT } from '../lib/captions.js';
+import { captionText } from '../lib/captions.js';
 import { CaptureError, openStreamSource, type StreamSource } from './capture.js';
 import { transcribeChunk, type TranscribeResult } from './providers.js';
 import type { CaptionWord, Station } from '../types.js';
@@ -169,18 +169,6 @@ export class CaptionSession {
   private sessionOffsetMs(wallMs: number): number {
     if (this.sessionStartMs === null) return 0;
     return Math.max(0, wallMs - this.sessionStartMs);
-  }
-
-  /**
-   * Most recent spoken text (music chunks excluded), capped to the last
-   * `maxWords` words — the raw material for ambient scene generation.
-   */
-  recentText(maxWords = 220): string {
-    const spoken = this.results
-      .filter((result) => result.text !== MUSIC_CAPTION_TEXT)
-      .map((result) => result.text);
-    const words = spoken.join(' ').split(/\s+/).filter(Boolean);
-    return words.slice(-maxWords).join(' ');
   }
 
   poll(after: number, timeoutMs: number): Promise<CaptionResult[]> {

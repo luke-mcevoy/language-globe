@@ -27,19 +27,21 @@ with `npm run dev` running both via concurrently).
 - Frontend: Vite + React + TypeScript, `react-globe.gl` for the globe,
   `hls.js` for HLS streams, `recharts` for the stats chart.
 - Backend: Node + TypeScript, Fastify, `better-sqlite3` for persistence,
-  OpenAI API for transcription (`whisper-1`) and quiz generation
-  (`gpt-4o-mini` or configurable via env `OPENAI_QUIZ_MODEL`).
+  whisper.cpp for transcription and Ollama (`qwen2.5:7b-instruct`) for
+  quiz generation and word translation. Features disable cleanly when a
+  local model is missing.
 - Stations: Radio Browser API (free, no key). Query
   `https://all.api.radio-browser.info/json/stations/search` with
   `language=<target>&has_geo_info=true&hidebroken=true&order=clickcount&reverse=true`,
   limit ~1500. Set a descriptive User-Agent header (Radio Browser asks for one),
   e.g. `language-globe/0.1`. Cache the result on the server for 6 hours
   (in-memory + SQLite fallback so restarts don't refetch).
-- API key: loaded from `server/.env` (`OPENAI_API_KEY`). Commit a
-  `server/.env.example`. THERE IS NO KEY ON THIS MACHINE YET: everything except
-  the quiz must work without it, and the quiz UI must show a friendly
-  "add OPENAI_API_KEY to server/.env to enable quizzes" state
-  (server exposes `GET /api/health` including `quizEnabled: boolean`).
+- Local models: whisper.cpp (`WHISPER_MODEL_PATH`) and Ollama
+  (`OLLAMA_URL` / `OLLAMA_MODEL`). Commit a `server/.env.example`.
+  Everything except captions, quizzes, and word lookup must work without
+  them. The UI must show a friendly disabled state that names the missing
+  local model (server exposes `GET /api/health` including `quizEnabled`
+  and `captionsEnabled`).
 
 ## Features
 
@@ -70,13 +72,13 @@ with `npm run dev` running both via concurrently).
 - Bottom player bar: station name, place, country flag emoji, genre tags,
   local time at station, play/pause, volume, and the "Quiz me" button.
 
-### 3. Comprehension quiz (needs OPENAI_API_KEY)
+### 3. Comprehension quiz (needs Ollama + whisper.cpp)
 - POST /api/quiz/start { stationId, difficulty }: server opens the station's
   stream URL with fetch, buffers ~60 seconds of the raw MP3/AAC bytes
   (respect ICY/icecast: strip metadata if `icy-metaint` is present, or
   simply request without `Icy-MetaData` header so no metadata is interleaved),
   writes to a temp file with correct extension inferred from content-type,
-  sends to OpenAI transcription (language hint = target language).
+  sends to local whisper.cpp transcription (language hint = target language).
   While capturing, the frontend shows a "listening along with you — keep
   listening!" countdown (the user hears the same content live).
 - Music detection: if the transcript is very short relative to 60s of audio

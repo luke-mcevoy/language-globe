@@ -7,48 +7,39 @@ import {
 } from '../src/services/providers.js';
 
 const none: ProviderProbeState = {
-  openaiAvailable: false,
   localWhisperAvailable: false,
   ollamaAvailable: false,
 };
 
 describe('provider selection', () => {
-  it('auto prefers local transcription, then OpenAI, then unavailable', () => {
-    expect(resolveTranscribeProvider('auto', { ...none, openaiAvailable: true, localWhisperAvailable: true })).toBe(
-      'local-whisper',
-    );
-    expect(resolveTranscribeProvider('auto', { ...none, openaiAvailable: true })).toBe('openai');
+  it('auto uses local whisper when present and is otherwise unavailable', () => {
+    expect(resolveTranscribeProvider('auto', { ...none, localWhisperAvailable: true })).toBe('local-whisper');
     expect(resolveTranscribeProvider('auto', none)).toBe('unavailable');
   });
 
-  it('forced local transcription falls back to OpenAI when local Whisper is missing', () => {
+  it('forced local transcription is unavailable without whisper.cpp', () => {
     expect(resolveTranscribeProvider('local', { ...none, localWhisperAvailable: true })).toBe('local-whisper');
-    expect(resolveTranscribeProvider('local', { ...none, openaiAvailable: true })).toBe('openai');
     expect(resolveTranscribeProvider('local', none)).toBe('unavailable');
   });
 
-  it('forced OpenAI transcription is unavailable without a key', () => {
-    expect(resolveTranscribeProvider('openai', { ...none, openaiAvailable: true, localWhisperAvailable: true })).toBe(
-      'openai',
-    );
-    expect(resolveTranscribeProvider('openai', { ...none, localWhisperAvailable: true })).toBe('unavailable');
+  it('unknown transcribe modes collapse to auto', () => {
+    expect(resolveTranscribeProvider('cloud', { ...none, localWhisperAvailable: true })).toBe('local-whisper');
+    expect(resolveTranscribeProvider('cloud', none)).toBe('unavailable');
   });
 
-  it('auto prefers Ollama quiz generation, then OpenAI, then unavailable', () => {
-    expect(resolveQuizProvider('auto', { ...none, openaiAvailable: true, ollamaAvailable: true })).toBe('ollama');
-    expect(resolveQuizProvider('auto', { ...none, openaiAvailable: true })).toBe('openai');
+  it('auto uses Ollama when present and is otherwise unavailable', () => {
+    expect(resolveQuizProvider('auto', { ...none, ollamaAvailable: true })).toBe('ollama');
     expect(resolveQuizProvider('auto', none)).toBe('unavailable');
   });
 
-  it('forced Ollama quiz generation falls back to OpenAI when Ollama is missing', () => {
+  it('forced Ollama is unavailable when the model is missing', () => {
     expect(resolveQuizProvider('ollama', { ...none, ollamaAvailable: true })).toBe('ollama');
-    expect(resolveQuizProvider('ollama', { ...none, openaiAvailable: true })).toBe('openai');
     expect(resolveQuizProvider('ollama', none)).toBe('unavailable');
   });
 
-  it('forced OpenAI quiz generation is unavailable without a key', () => {
-    expect(resolveQuizProvider('openai', { ...none, openaiAvailable: true, ollamaAvailable: true })).toBe('openai');
-    expect(resolveQuizProvider('openai', { ...none, ollamaAvailable: true })).toBe('unavailable');
+  it('unknown quiz modes collapse to auto', () => {
+    expect(resolveQuizProvider('cloud', { ...none, ollamaAvailable: true })).toBe('ollama');
+    expect(resolveQuizProvider('cloud', none)).toBe('unavailable');
   });
 });
 

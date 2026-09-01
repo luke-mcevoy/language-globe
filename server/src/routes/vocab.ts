@@ -40,7 +40,8 @@ export async function registerVocabRoutes(app: FastifyInstance): Promise<void> {
     if (!quizEnabled()) {
       return reply.status(503).send({
         error: 'translation_unavailable',
-        message: 'No translation model is available. Configure OPENAI_API_KEY or Ollama.',
+        message:
+          'Word lookup needs Ollama. Install it and run `ollama pull qwen2.5:7b-instruct`, then restart the server.',
       });
     }
 

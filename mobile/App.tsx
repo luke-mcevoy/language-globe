@@ -149,10 +149,20 @@ export default function App() {
           <LegendDot color={KIND_COLORS.unknown} label="unlabelled" />
         </View>
 
+        {health && !health.captionsEnabled && (
+          <View style={styles.notice}>
+            <Text style={styles.noticeText}>
+              Live captions are off — whisper.cpp is not available. Set WHISPER_MODEL_PATH to a ggml model
+              and install whisper-server (or whisper-cli).
+            </Text>
+          </View>
+        )}
+
         {health && !health.quizEnabled && (
           <View style={styles.notice}>
             <Text style={styles.noticeText}>
-              Quizzes are off until local models are available or OPENAI_API_KEY is set on the server.
+              Quizzes and word lookup are off — Ollama is not running. Install it and run ollama pull
+              qwen2.5:7b-instruct.
             </Text>
           </View>
         )}
@@ -178,7 +188,6 @@ export default function App() {
         onPauseAudio={radio.pause}
         onResumeAudio={radio.resume}
         playback={radio.playback}
-        scenesEnabled={health?.scenesEnabled ?? false}
       />
 
       <PlayerBar

@@ -80,7 +80,7 @@ describe('mergeWhisperCliTokensToWords', () => {
 });
 
 describe('normalizeFlatWords', () => {
-  it('normalizes the OpenAI verbose_json shape (word/start/end in seconds)', () => {
+  it('normalizes the verbose_json word/start/end-in-seconds shape', () => {
     expect(
       normalizeFlatWords([
         { word: 'Hola', start: 0.1, end: 0.48 },

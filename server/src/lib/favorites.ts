@@ -36,7 +36,7 @@ export function createFavoritesStore(db: BetterDatabase): FavoritesStore {
   db.exec(`
     CREATE TABLE IF NOT EXISTS favorites (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id      INTEGER NOT NULL REFERENCES users(id),
+      user_id      TEXT    NOT NULL REFERENCES users(id),
       station_id   TEXT    NOT NULL,
       station_name TEXT    NOT NULL,
       country      TEXT    NOT NULL DEFAULT '',

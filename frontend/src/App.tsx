@@ -397,7 +397,10 @@ export function App() {
         onCaptions={() => setCaptionsOpen((open) => !open)}
         onQuiz={() => setQuizOpen(true)}
         onToggleFavorite={() => {
-          if (radio.station) void favorites.toggle(radio.station);
+          if (!radio.station) return;
+          requireAccount(() => {
+            void favorites.toggle(radio.station!);
+          });
         }}
       />
 

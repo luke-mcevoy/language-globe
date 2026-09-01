@@ -51,7 +51,7 @@ export function createVocabStore(db: BetterDatabase): VocabStore {
   db.exec(`
     CREATE TABLE IF NOT EXISTS vocab_lookups (
       id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id            INTEGER NOT NULL REFERENCES users(id),
+      user_id            TEXT    NOT NULL REFERENCES users(id),
       word_key           TEXT    NOT NULL,
       word               TEXT    NOT NULL,
       translation        TEXT    NOT NULL,

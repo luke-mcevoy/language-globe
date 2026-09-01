@@ -4,6 +4,7 @@ import path from 'node:path';
 import { config } from './config.js';
 import { createAuthStore } from './lib/auth.js';
 import { createFavoritesStore } from './lib/favorites.js';
+import { migrateLegacyUserForeignKeys } from './lib/migrateUserForeignKeys.js';
 import { createPresenceStore, createSocialStore } from './lib/social.js';
 import { createVocabStore } from './lib/vocab.js';
 import type { Difficulty, QuizQuestion } from './types.js';
@@ -24,7 +25,7 @@ export const authStore = createAuthStore(db);
 db.exec(`
   CREATE TABLE IF NOT EXISTS quizzes (
     id             TEXT PRIMARY KEY,
-    user_id        INTEGER NOT NULL REFERENCES users(id),
+    user_id        TEXT NOT NULL REFERENCES users(id),
     station_id     TEXT NOT NULL,
     station_name   TEXT NOT NULL,
     country        TEXT NOT NULL DEFAULT '',
@@ -38,7 +39,7 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS quiz_results (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id          INTEGER NOT NULL REFERENCES users(id),
+    user_id          TEXT NOT NULL REFERENCES users(id),
     quiz_id          TEXT NOT NULL REFERENCES quizzes(id),
     station_id       TEXT NOT NULL,
     station_name     TEXT NOT NULL,
@@ -76,6 +77,10 @@ export const vocabStore = createVocabStore(db);
  */
 export const socialStore = createSocialStore(db);
 export const presenceStore = createPresenceStore();
+
+// Must run after every CREATE TABLE IF NOT EXISTS: those are no-ops on a DB
+// that still FKs favorites/vocab/quizzes to `users_legacy`.
+migrateLegacyUserForeignKeys(db);
 
 export interface StoredQuiz {
   id: string;

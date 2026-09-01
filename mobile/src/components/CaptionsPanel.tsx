@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   ApiError,
   captionSessionAudioUrl,
+  generateScene,
   lookupWord,
   pollCaptionSession,
   startCaptionSession,
@@ -26,7 +27,25 @@ interface CaptionsPanelProps {
     playing: boolean;
     receivedAtMs: number;
   };
+  /** True when the local image sidecar is running; shows the scene card. */
+  scenesEnabled: boolean;
 }
+
+interface Scene {
+  src: string;
+  prompt: string;
+  key: number;
+}
+
+/** How often a fresh scene is drawn from the latest transcript. */
+const SCENE_INTERVAL_MS = 45_000;
+/** Cross-fade the new scene in over this many ms (mirrors web `scene-fade`). */
+const SCENE_FADE_MS = 1_400;
+/**
+ * First-generation on a cold sidecar can take ~45 s, so give the fetch a
+ * generous ceiling before we abort and retry on the next 5s tick.
+ */
+const SCENE_FETCH_TIMEOUT_MS = 90_000;
 
 interface KaraokeState {
   chunkSeq: number | null;
@@ -62,6 +81,7 @@ export function CaptionsPanel({
   onResumeAudio,
   paused,
   playback,
+  scenesEnabled,
   station,
   visible,
 }: CaptionsPanelProps) {
@@ -74,6 +94,12 @@ export function CaptionsPanel({
   const [syncProgress, setSyncProgress] = useState(0);
   const [bufferVersion, setBufferVersion] = useState(0);
   const [lookup, setLookup] = useState<WordLookup | null>(null);
+  const [scene, setScene] = useState<Scene | null>(null);
+  const [prevScene, setPrevScene] = useState<Scene | null>(null);
+  const sceneRef = useRef<Scene | null>(null);
+  const sceneInflightRef = useRef(false);
+  const lastSceneAtRef = useRef(0);
+  const sceneFadeAnim = useRef(new Animated.Value(1)).current;
   const bufferRef = useRef<{ bufferedMs: number; atMs: number } | null>(null);
   const sessionStartRef = useRef<number | null>(null);
   const scrollRef = useRef<ScrollView | null>(null);
@@ -88,9 +114,73 @@ export function CaptionsPanel({
     setSyncReady(false);
     setSyncProgress(0);
     setLookup(null);
+    setScene(null);
+    setPrevScene(null);
+    sceneRef.current = null;
+    lastSceneAtRef.current = 0;
     bufferRef.current = null;
     sessionStartRef.current = null;
   }, [station?.id]);
+
+  // Ambient scene art: redraw from the freshest transcript every ~45s. First
+  // request fires as soon as the session exists; the server falls back to a
+  // station-vibe prompt while there is no spoken text yet. The sidecar can be
+  // slow to warm up so failures just fall through to the next tick.
+  useEffect(() => {
+    if (!scenesEnabled || !sessionId) return;
+    let cancelled = false;
+    let currentController: AbortController | null = null;
+
+    const tick = async () => {
+      if (cancelled || sceneInflightRef.current) return;
+      if (Date.now() - lastSceneAtRef.current < SCENE_INTERVAL_MS && sceneRef.current) return;
+      sceneInflightRef.current = true;
+      const controller = new AbortController();
+      currentController = controller;
+      const timer = setTimeout(() => controller.abort(), SCENE_FETCH_TIMEOUT_MS);
+      try {
+        const response = await generateScene(sessionId, controller.signal);
+        if (cancelled) return;
+        lastSceneAtRef.current = Date.now();
+        const next: Scene = { src: response.image, prompt: response.prompt, key: Date.now() };
+        setPrevScene(sceneRef.current);
+        setScene(next);
+        sceneRef.current = next;
+      } catch {
+        // Sidecar busy or warming up; next tick retries.
+      } finally {
+        clearTimeout(timer);
+        sceneInflightRef.current = false;
+        if (currentController === controller) currentController = null;
+      }
+    };
+
+    void tick();
+    const interval = setInterval(() => void tick(), 5_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      currentController?.abort();
+    };
+  }, [scenesEnabled, sessionId]);
+
+  // Cross-fade a new scene over the previous one. Reset opacity to 0 on each
+  // new key and animate up to 1; drop the previous image once the fade lands.
+  useEffect(() => {
+    if (!scene) return;
+    sceneFadeAnim.setValue(0);
+    const anim = Animated.timing(sceneFadeAnim, {
+      toValue: 1,
+      duration: SCENE_FADE_MS,
+      useNativeDriver: true,
+    });
+    anim.start(({ finished }) => {
+      if (finished) setPrevScene(null);
+    });
+    return () => {
+      anim.stop();
+    };
+  }, [scene?.key, sceneFadeAnim]);
 
   useEffect(() => {
     if (!visible || !enabled || paused || !station) {
@@ -298,6 +388,29 @@ export function CaptionsPanel({
           <Text style={styles.closeText}>×</Text>
         </Pressable>
       </View>
+      {scene && (
+        <View style={styles.sceneCard}>
+          {prevScene && (
+            <Image
+              key={prevScene.key}
+              source={{ uri: prevScene.src }}
+              style={styles.sceneImage}
+              accessible={false}
+            />
+          )}
+          <Animated.Image
+            key={scene.key}
+            source={{ uri: scene.src }}
+            style={[styles.sceneImage, { opacity: sceneFadeAnim }]}
+            accessibilityLabel={scene.prompt}
+          />
+          <View style={styles.scenePromptOverlay} pointerEvents="none">
+            <Text style={styles.scenePromptText} numberOfLines={2}>
+              {scene.prompt}
+            </Text>
+          </View>
+        </View>
+      )}
       {!syncReady && !error && (
         <View style={styles.syncRow}>
           <Text style={styles.syncText}>Syncing audio</Text>
@@ -459,6 +572,43 @@ const styles = StyleSheet.create({
     color: '#dbe7ff',
     fontSize: 22,
     lineHeight: 24,
+  },
+  sceneCard: {
+    marginHorizontal: 14,
+    marginTop: 12,
+    marginBottom: 4,
+    aspectRatio: 3 / 2,
+    borderRadius: 10,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: '#060a15',
+  },
+  sceneImage: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+  },
+  scenePromptOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 12,
+    paddingTop: 18,
+    paddingBottom: 8,
+    // RN has no CSS gradients built in; a solid dark tint anchored to the
+    // bottom approximates web's `linear-gradient(to top, rgba(4,7,14,.88), transparent)`.
+    backgroundColor: 'rgba(4, 7, 14, 0.78)',
+  },
+  scenePromptText: {
+    color: 'rgba(234, 240, 255, 0.78)',
+    fontSize: 11,
+    lineHeight: 15,
   },
   syncRow: {
     flexDirection: 'row',

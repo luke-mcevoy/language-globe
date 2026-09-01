@@ -178,6 +178,7 @@ export default function App() {
         onPauseAudio={radio.pause}
         onResumeAudio={radio.resume}
         playback={radio.playback}
+        scenesEnabled={health?.scenesEnabled ?? false}
       />
 
       <PlayerBar

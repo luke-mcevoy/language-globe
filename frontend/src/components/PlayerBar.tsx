@@ -90,6 +90,7 @@ export function PlayerBar({
           >
             <HeartIcon filled={isFavorited} />
           </button>
+          <span className={`player__kind player__kind--${station.kind}`}>{station.kind}</span>
           <span className="player__codec">
             {station.codec}
             {station.bitrate > 0 ? ` ${station.bitrate}k` : ''}

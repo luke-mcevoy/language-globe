@@ -409,6 +409,27 @@ code {
   text-overflow: ellipsis;
 }
 
+.player__kind {
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-size: 9.5px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  border: 1px solid var(--hairline);
+  color: var(--ink-secondary);
+  flex: none;
+}
+
+.player__kind--talk {
+  color: var(--accent);
+  border-color: rgba(84, 230, 195, 0.3);
+}
+
+.player__kind--music {
+  color: var(--violet);
+  border-color: rgba(141, 125, 255, 0.3);
+}
+
 .player__codec {
   font-size: 10.5px;
   letter-spacing: 0.08em;
@@ -630,20 +651,26 @@ code {
 .captions {
   position: absolute;
   z-index: 4;
+  top: 86px;
   right: 20px;
-  bottom: 122px;
-  width: min(480px, calc(100vw - 40px));
-  max-height: min(56vh, 520px);
+  width: min(340px, calc(100vw - 40px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
   animation: rise-in 220ms ease-out;
-  /* Reading surface: the shared .glass tint (62% opacity) lets the globe and
-     starfield bleed through the text, so captions get a near-opaque backdrop
-     and a stronger edge instead. */
-  background: rgba(7, 11, 20, 0.94);
+  background: rgba(7, 11, 20, 0.88);
   border: 1px solid var(--hairline-strong);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+}
+
+.captions--collapsed .captions__eyebrow {
+  display: none;
+}
+
+.captions--expanded {
+  width: min(480px, calc(100vw - 40px));
+  max-height: min(56vh, 520px);
+  background: rgba(7, 11, 20, 0.94);
 }
 
 @keyframes rise-in {
@@ -659,17 +686,38 @@ code {
 
 .captions__header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
+  padding: 10px 12px;
+}
+
+.captions--expanded .captions__header {
+  align-items: flex-start;
   padding: 14px 16px 10px;
   border-bottom: 1px solid var(--hairline);
+}
+
+.captions__identity {
+  min-width: 0;
 }
 
 .captions__controls {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+}
+
+.captions__compact-stat {
+  font-size: 11px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.captions__toggle {
+  font-size: 13px;
+  line-height: 1;
 }
 
 
@@ -683,12 +731,17 @@ code {
 }
 
 .captions__station {
-  max-width: 46ch;
+  max-width: 22ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 15px;
+  font-size: 14px;
   margin-top: 2px;
+}
+
+.captions--expanded .captions__station {
+  max-width: 46ch;
+  font-size: 15px;
 }
 
 .captions__sync {
@@ -843,6 +896,211 @@ code {
   border-top: 1px solid var(--hairline);
   color: var(--ink-muted);
   font-size: 11.5px;
+}
+
+/* ------------------------------------------- cinematic subtitle layer -- */
+
+.subtitles {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  bottom: 138px;
+  width: min(64vw, 920px);
+  transform: translateX(-50%);
+  pointer-events: none;
+  display: flex;
+  justify-content: center;
+}
+
+.subtitles__stage {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  min-height: 2.8em;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+}
+
+.subtitles__stage::before {
+  content: '';
+  position: absolute;
+  inset: -64px -110px -44px;
+  background: radial-gradient(
+    ellipse 74% 64% at 50% 58%,
+    rgba(1, 4, 12, 0.82) 0%,
+    rgba(1, 4, 12, 0.5) 38%,
+    rgba(1, 4, 12, 0.18) 62%,
+    transparent 78%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+.subtitles__stage::after {
+  content: '';
+  position: absolute;
+  inset: -36px -80px -24px;
+  background: radial-gradient(ellipse 82% 72% at 50% 55%, rgba(0, 0, 0, 0.32), transparent 74%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 55%, black 24%, transparent 76%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 55%, black 24%, transparent 76%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.subtitles__layer {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.subtitles__layer--in {
+  animation: subtitle-in 300ms ease-out;
+}
+
+.subtitles__layer--out {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  animation: subtitle-out 300ms ease-in forwards;
+  pointer-events: none;
+}
+
+@keyframes subtitle-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes subtitle-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+}
+
+.subtitles__line {
+  margin: 0;
+  max-width: 100%;
+  font-size: clamp(22px, 2.6vw, 34px);
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  text-align: center;
+  color: #fff;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.95),
+    0 2px 18px rgba(0, 0, 0, 0.78),
+    0 0 32px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+.subtitles__word {
+  pointer-events: auto;
+}
+
+.subtitles__word--past {
+  color: #ffffff;
+}
+
+.subtitles__word--current {
+  display: inline-block;
+  color: #7bfbdc;
+  font-weight: 700;
+  transform: scale(1.04);
+  transform-origin: 50% 60%;
+  padding: 0 0.08em;
+  margin: 0 -0.08em;
+  text-shadow:
+    0 0 8px rgba(84, 230, 195, 0.95),
+    0 0 22px rgba(84, 230, 195, 0.7),
+    0 0 40px rgba(84, 230, 195, 0.35),
+    0 2px 8px rgba(0, 0, 0, 0.8);
+  transition:
+    transform 120ms ease,
+    color 120ms ease,
+    text-shadow 120ms ease;
+}
+
+.subtitles__word--future {
+  color: #ffffff;
+  opacity: 0.45;
+}
+
+.subtitles__word--clickable {
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.subtitles__word--clickable:hover {
+  color: var(--accent);
+  opacity: 1;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1.5px;
+}
+
+.subtitles__pill {
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(6, 10, 18, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--ink-secondary);
+  font-size: 13px;
+  font-weight: 550;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+}
+
+.subtitles__pill--music {
+  color: rgba(234, 240, 255, 0.55);
+  letter-spacing: 0.12em;
+  text-transform: lowercase;
+  font-style: italic;
+  font-size: 12.5px;
+}
+
+.subtitles__sync-track {
+  width: 88px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.subtitles__sync-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 250ms linear;
+}
+
+.subtitles__sync-pct {
+  min-width: 3.5ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  font-size: 12px;
 }
 
 /* ------------------------------------------------------------ tooltips -- */
@@ -1794,11 +2052,28 @@ code {
   }
 
   .captions {
-    left: 14px;
+    top: auto;
+    left: auto;
     right: 14px;
     bottom: 184px;
+    width: min(280px, calc(100vw - 28px));
+    max-height: none;
+    transform: none;
+  }
+
+  .captions--expanded {
+    left: 14px;
+    right: 14px;
     width: auto;
     max-height: 38vh;
+  }
+
+  .subtitles {
+    left: 8vw;
+    right: 8vw;
+    width: auto;
+    max-width: none;
+    bottom: 168px;
     transform: none;
   }
 
@@ -1837,7 +2112,7 @@ code {
 }
 
 .word-popover {
-  position: absolute;
+  position: fixed;
   transform: translate(-50%, calc(-100% - 10px));
   width: 250px;
   padding: 12px 14px;
@@ -1845,7 +2120,7 @@ code {
   background: rgba(10, 15, 26, 0.98);
   border: 1px solid var(--hairline-strong);
   box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55);
-  z-index: 30;
+  z-index: 40;
 }
 
 .word-popover::after {

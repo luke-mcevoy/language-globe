@@ -28,9 +28,20 @@ interface WordLookup {
   status: 'loading' | 'ready' | 'error';
   entry?: VocabEntry;
   message?: string;
-  /** Popover anchor, relative to the panel. */
+  /** Popover anchor in viewport coordinates (position: fixed). */
   top: number;
   left: number;
+}
+
+type SubtitleView =
+  | { kind: 'sync' }
+  | { kind: 'music'; seq: number }
+  | { kind: 'chunk'; chunk: CaptionChunk };
+
+function subtitleViewKey(view: SubtitleView): string {
+  if (view.kind === 'sync') return 'sync';
+  if (view.kind === 'music') return `music-${view.seq}`;
+  return `chunk-${view.chunk.seq}`;
 }
 
 /** Strip surrounding punctuation: clicking "¡Sacude!" looks up "Sacude". */
@@ -84,13 +95,15 @@ export function CaptionsPanel({
   const [syncProgress, setSyncProgress] = useState(0);
   const [bufferVersion, setBufferVersion] = useState(0);
   const [pinned, setPinned] = useState(true);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [lookup, setLookup] = useState<WordLookup | null>(null);
-  const panelRef = useRef<HTMLElement | null>(null);
+  const [exitingView, setExitingView] = useState<SubtitleView | null>(null);
   const bufferRef = useRef<{ bufferedMs: number; atMs: number } | null>(null);
   /** When the session was created — seeds the sync bar before the first poll reports real buffer fill. */
   const sessionStartRef = useRef<number | null>(null);
   const feedRef = useRef<HTMLDivElement | null>(null);
   const pinnedRef = useRef(true);
+  const prevSubtitleKeyRef = useRef<string | null>(null);
   const delaySeconds = chunkSeconds + 5;
 
   useEffect(() => {
@@ -101,9 +114,12 @@ export function CaptionsPanel({
     setSyncReady(false);
     setSyncProgress(0);
     setPinned(true);
+    setHistoryOpen(false);
     setLookup(null);
+    setExitingView(null);
     bufferRef.current = null;
     pinnedRef.current = true;
+    prevSubtitleKeyRef.current = null;
   }, [station.id]);
 
   const handleWordClick = useCallback(
@@ -112,11 +128,9 @@ export function CaptionsPanel({
       if (word.length === 0) return;
       onPauseAudio();
 
-      const panelRect = panelRef.current?.getBoundingClientRect();
       const wordRect = target.getBoundingClientRect();
-      const panelWidth = panelRect?.width ?? 440;
-      const left = panelRect ? Math.min(Math.max(wordRect.left - panelRect.left + wordRect.width / 2, 130), panelWidth - 130) : 130;
-      const top = panelRect ? Math.max(wordRect.top - panelRect.top, 64) : 64;
+      const left = Math.min(Math.max(wordRect.left + wordRect.width / 2, 140), window.innerWidth - 140);
+      const top = Math.max(wordRect.top, 72);
 
       setLookup({ word, status: 'loading', top, left });
       lookupWord(word, context, station.name)
@@ -165,7 +179,7 @@ export function CaptionsPanel({
 
   useEffect(() => {
     pinToBottom();
-  }, [chunks, pending, pinToBottom]);
+  }, [chunks, historyOpen, pending, pinToBottom]);
 
   useEffect(() => {
     if (!active || !enabled || paused) {
@@ -317,6 +331,46 @@ export function CaptionsPanel({
   const wordCount = chunks.reduce((total, chunk) => total + chunk.text.split(/\s+/).filter(Boolean).length, 0);
   const activeChunkSeq = karaoke.chunkSeq;
   const activeWordIndex = karaoke.wordIndex;
+  const activeChunk = useMemo(
+    () => chunks.find((chunk) => chunk.seq === activeChunkSeq) ?? null,
+    [activeChunkSeq, chunks],
+  );
+
+  const subtitleView = useMemo<SubtitleView | null>(() => {
+    if (!syncReady && !error) return { kind: 'sync' };
+    if (!activeChunk) return null;
+    if (activeChunk.text === MUSIC_TEXT) return { kind: 'music', seq: activeChunk.seq };
+    return { kind: 'chunk', chunk: activeChunk };
+  }, [activeChunk, error, syncReady]);
+
+  const subtitleKey = subtitleView ? subtitleViewKey(subtitleView) : null;
+
+  useEffect(() => {
+    const previousKey = prevSubtitleKeyRef.current;
+    prevSubtitleKeyRef.current = subtitleKey;
+    if (previousKey === null || previousKey === subtitleKey) return;
+
+    if (previousKey === 'sync') {
+      setExitingView({ kind: 'sync' });
+      return;
+    }
+    if (previousKey.startsWith('music-')) {
+      const seq = Number(previousKey.slice('music-'.length));
+      if (Number.isFinite(seq)) setExitingView({ kind: 'music', seq });
+      return;
+    }
+    if (previousKey.startsWith('chunk-')) {
+      const seq = Number(previousKey.slice('chunk-'.length));
+      const chunk = chunks.find((item) => item.seq === seq);
+      if (chunk) setExitingView({ kind: 'chunk', chunk });
+    }
+  }, [chunks, subtitleKey]);
+
+  useEffect(() => {
+    if (!exitingView) return;
+    const timer = window.setTimeout(() => setExitingView(null), 300);
+    return () => window.clearTimeout(timer);
+  }, [exitingView]);
 
   // Collapse runs of "♪ music ♪" chunks into one quiet row — five identical
   // lines of music markers were noise that pushed real speech off screen.
@@ -350,82 +404,36 @@ export function CaptionsPanel({
     feed.scrollTop = feed.scrollHeight;
   }, []);
 
+  const syncPct = Math.round(syncProgress * 100);
+
   return (
-    <aside className="captions glass" aria-label="Live captions" ref={panelRef}>
-      <header className="captions__header">
-        <div>
-          <p className="captions__eyebrow">Live captions</p>
-          <h2 className="captions__station" title={station.name}>
-            {station.name}
-          </h2>
+    <>
+      <div className="subtitles" aria-live="polite">
+        <div className="subtitles__stage">
+          {exitingView && (
+            <div
+              key={`out-${subtitleViewKey(exitingView)}`}
+              className="subtitles__layer subtitles__layer--out"
+              aria-hidden="true"
+            >
+              {renderSubtitleView(exitingView, -1, handleWordClick, syncPct)}
+            </div>
+          )}
+          {subtitleView && (
+            <div key={subtitleViewKey(subtitleView)} className="subtitles__layer subtitles__layer--in">
+              {renderSubtitleView(subtitleView, activeWordIndex, handleWordClick, syncPct)}
+            </div>
+          )}
         </div>
-        <div className="captions__controls">
-          <button type="button" className="icon-button" onClick={onClose} aria-label="Close captions">
-            ×
-          </button>
-        </div>
-      </header>
-
-      {!syncReady && !error && (
-        <div className="captions__sync" role="status">
-          <span>Syncing audio</span>
-          <div className="captions__sync-track" aria-hidden="true">
-            <div className="captions__sync-fill" style={{ width: `${Math.round(syncProgress * 100)}%` }} />
-          </div>
-          <span className="captions__sync-pct">{Math.round(syncProgress * 100)}%</span>
-        </div>
-      )}
-
-      <div
-        className="captions__feed"
-        ref={feedRef}
-        onScroll={(event) => {
-          const feed = event.currentTarget;
-          const atBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 24;
-          pinnedRef.current = atBottom;
-          setPinned(atBottom);
-        }}
-      >
-        {chunks.length === 0 && !pending && !paused && !error && (
-          <p className="captions__empty">Listening for speech…</p>
-        )}
-        {feedItems.map((item, index) => {
-          const isLatest = index === feedItems.length - 1;
-          if (item.kind === 'music') {
-            return (
-              <p className="captions__music" key={`music-${item.seq}`}>
-                {MUSIC_TEXT}
-              </p>
-            );
-          }
-          const { chunk } = item;
-          const isPlaying = chunk.seq === activeChunkSeq;
-          const className =
-            `captions__chunk${isLatest ? ' captions__chunk--latest' : ''}` +
-            `${isPlaying ? ' captions__chunk--playing' : ''}`;
-          return (
-            <p className={className} key={chunk.seq}>
-              {renderChunkBody(chunk, isPlaying, isPlaying ? activeWordIndex : -1, handleWordClick)}
-            </p>
-          );
-        })}
-        {paused && <p className="captions__paused">Paused while the quiz captures this station.</p>}
-        {error && <p className="captions__error">{error}</p>}
-        {pending && (
-          <p className="captions__pending" aria-label="Captions loading">
-            ...
-          </p>
-        )}
       </div>
 
-      {!pinned && (
-        <button type="button" className="captions__jump" onClick={jumpToLatest}>
-          ↓ Latest
-        </button>
-      )}
-
       {lookup && (
-        <div className="word-popover" style={{ top: lookup.top, left: lookup.left }} role="dialog" aria-label={`Translation of ${lookup.word}`}>
+        <div
+          className="word-popover"
+          style={{ top: lookup.top, left: lookup.left }}
+          role="dialog"
+          aria-label={`Translation of ${lookup.word}`}
+        >
           <p className="word-popover__word">{lookup.word}</p>
           {lookup.status === 'loading' && <p className="word-popover__muted">translating…</p>}
           {lookup.status === 'error' && <p className="word-popover__error">{lookup.message}</p>}
@@ -450,15 +458,175 @@ export function CaptionsPanel({
         </div>
       )}
 
-      <footer className="captions__footer">
-        <span>{wordCount} words</span>
-        <span className={syncReady ? 'captions__status captions__status--live' : 'captions__status'}>{status}</span>
-      </footer>
-    </aside>
+      <aside
+        className={`captions glass${historyOpen ? ' captions--expanded' : ' captions--collapsed'}`}
+        aria-label="Live captions"
+      >
+        <header className="captions__header">
+          <div className="captions__identity">
+            <p className="captions__eyebrow">Live captions</p>
+            <h2 className="captions__station" title={station.name}>
+              {station.name}
+            </h2>
+          </div>
+          <div className="captions__controls">
+            <span className="captions__compact-stat" title={status}>
+              {syncReady ? 'live' : `${syncPct}%`}
+            </span>
+            <span className="captions__compact-stat">{wordCount} words</span>
+            <button
+              type="button"
+              className="icon-button captions__toggle"
+              onClick={() => setHistoryOpen((open) => !open)}
+              aria-expanded={historyOpen}
+              aria-label={historyOpen ? 'Hide caption history' : 'Show caption history'}
+            >
+              {historyOpen ? '▴' : '▾'}
+            </button>
+            <button type="button" className="icon-button" onClick={onClose} aria-label="Close captions">
+              ×
+            </button>
+          </div>
+        </header>
+
+        {historyOpen && (
+          <>
+            {!syncReady && !error && (
+              <div className="captions__sync" role="status">
+                <span>Syncing audio</span>
+                <div className="captions__sync-track" aria-hidden="true">
+                  <div className="captions__sync-fill" style={{ width: `${syncPct}%` }} />
+                </div>
+                <span className="captions__sync-pct">{syncPct}%</span>
+              </div>
+            )}
+
+            <div
+              className="captions__feed"
+              ref={feedRef}
+              onScroll={(event) => {
+                const feed = event.currentTarget;
+                const atBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 24;
+                pinnedRef.current = atBottom;
+                setPinned(atBottom);
+              }}
+            >
+              {chunks.length === 0 && !pending && !paused && !error && (
+                <p className="captions__empty">Listening for speech…</p>
+              )}
+              {feedItems.map((item, index) => {
+                const isLatest = index === feedItems.length - 1;
+                if (item.kind === 'music') {
+                  return (
+                    <p className="captions__music" key={`music-${item.seq}`}>
+                      {MUSIC_TEXT}
+                    </p>
+                  );
+                }
+                const { chunk } = item;
+                const isPlaying = chunk.seq === activeChunkSeq;
+                const className =
+                  `captions__chunk${isLatest ? ' captions__chunk--latest' : ''}` +
+                  `${isPlaying ? ' captions__chunk--playing' : ''}`;
+                return (
+                  <p className={className} key={chunk.seq}>
+                    {renderChunkBody(chunk, isPlaying, isPlaying ? activeWordIndex : -1, handleWordClick)}
+                  </p>
+                );
+              })}
+              {paused && <p className="captions__paused">Paused while the quiz captures this station.</p>}
+              {error && <p className="captions__error">{error}</p>}
+              {pending && (
+                <p className="captions__pending" aria-label="Captions loading">
+                  ...
+                </p>
+              )}
+            </div>
+
+            {!pinned && (
+              <button type="button" className="captions__jump" onClick={jumpToLatest}>
+                ↓ Latest
+              </button>
+            )}
+
+            <footer className="captions__footer">
+              <span>{wordCount} words</span>
+              <span className={syncReady ? 'captions__status captions__status--live' : 'captions__status'}>{status}</span>
+            </footer>
+          </>
+        )}
+      </aside>
+    </>
   );
 }
 
 type WordClickHandler = (word: string, context: string, target: HTMLElement) => void;
+
+function renderSubtitleView(
+  view: SubtitleView,
+  activeWordIndex: number,
+  onWordClick: WordClickHandler,
+  syncPct: number,
+) {
+  if (view.kind === 'sync') {
+    return (
+      <div className="subtitles__pill subtitles__pill--sync" role="status">
+        <span>Syncing audio</span>
+        <div className="subtitles__sync-track" aria-hidden="true">
+          <div className="subtitles__sync-fill" style={{ width: `${syncPct}%` }} />
+        </div>
+        <span className="subtitles__sync-pct">{syncPct}%</span>
+      </div>
+    );
+  }
+  if (view.kind === 'music') {
+    return (
+      <div className="subtitles__pill subtitles__pill--music">
+        <span>♪ música</span>
+      </div>
+    );
+  }
+  return (
+    <p className="subtitles__line">
+      {renderSubtitleBody(view.chunk, activeWordIndex, onWordClick)}
+    </p>
+  );
+}
+
+function renderSubtitleBody(chunk: CaptionChunk, activeWordIndex: number, onWordClick: WordClickHandler) {
+  const words = chunk.words;
+  if (!words || words.length === 0) {
+    return chunk.text.split(/(\s+)/).map((token, index) =>
+      /\S/.test(token) ? (
+        <span
+          key={index}
+          className="subtitles__word subtitles__word--past subtitles__word--clickable"
+          onClick={(event) => onWordClick(token, chunk.text, event.currentTarget)}
+        >
+          {token}
+        </span>
+      ) : (
+        token
+      ),
+    );
+  }
+
+  return words.map((word, index) => {
+    const state: 'past' | 'current' | 'future' =
+      index < activeWordIndex ? 'past' : index === activeWordIndex ? 'current' : 'future';
+    return (
+      <span key={index}>
+        <span
+          className={`subtitles__word subtitles__word--${state} subtitles__word--clickable`}
+          onClick={(event) => onWordClick(word.word, chunk.text, event.currentTarget)}
+        >
+          {word.word}
+        </span>
+        {index < words.length - 1 ? ' ' : ''}
+      </span>
+    );
+  });
+}
 
 function renderChunkBody(
   chunk: CaptionChunk,

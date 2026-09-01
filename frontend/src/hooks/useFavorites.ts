@@ -21,14 +21,21 @@ function stationSnapshot(station: Station, createdAt: string): Favorite {
 /**
  * Owns the favorites list + a Set of ids for cheap membership checks. Mutations
  * are optimistic so the heart flips instantly; a rejected request rolls the
- * change back and surfaces the error.
+ * change back and surfaces the error. `enabled` is false while anonymous so
+ * we do not 401-nudge the sign-in modal on every page load.
  */
-export function useFavorites(): FavoritesState {
+export function useFavorites(enabled = true): FavoritesState {
   const [favorites, setFavorites] = useState<Favorite[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
+    if (!enabled) {
+      setFavorites([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const response = await getFavorites();
@@ -39,7 +46,7 @@ export function useFavorites(): FavoritesState {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
     void refresh();

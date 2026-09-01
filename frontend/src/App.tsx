@@ -1,7 +1,9 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiError, getHealth, getStations, getStats } from './api';
+import { AuthModal } from './components/AuthModal';
 import { CaptionsPanel } from './components/CaptionsPanel';
 import { FavoritesPanel } from './components/FavoritesPanel';
+import { FriendsPanel } from './components/FriendsPanel';
 import { GlobeView, KIND_COLORS } from './components/GlobeView';
 import { PlayerBar } from './components/PlayerBar';
 import { QuizPanel } from './components/QuizPanel';
@@ -11,7 +13,10 @@ import { QuizPanel } from './components/QuizPanel';
 const StatsPanel = lazy(() =>
   import('./components/StatsPanel').then((module) => ({ default: module.StatsPanel })),
 );
+import { ACCOUNT_NUDGE, useAuth } from './hooks/useAuth';
 import { useFavorites } from './hooks/useFavorites';
+import { useFriendsListening } from './hooks/useFriendsListening';
+import { usePresence } from './hooks/usePresence';
 import { useRadio } from './hooks/useRadio';
 import { titleCase } from './lib/format';
 import type { HealthResponse, Station, StatsResponse } from './types';
@@ -27,9 +32,14 @@ export function App() {
   const [captionsOpen, setCaptionsOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
   const [favoritesOpen, setFavoritesOpen] = useState(false);
+  const [friendsOpen, setFriendsOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [globeReady, setGlobeReady] = useState(false);
   const radio = useRadio();
-  const favorites = useFavorites();
+  const auth = useAuth();
+  const favorites = useFavorites(Boolean(auth.user));
+  const friendsListening = useFriendsListening(Boolean(auth.user));
+  usePresence(auth.user, radio.station, radio.status === 'playing');
 
   const refreshStats = useCallback(async () => {
     try {
@@ -61,8 +71,15 @@ export function App() {
       .then(setHealth)
       .catch(() => setHealth(null));
     void loadStations();
+  }, [loadStations]);
+
+  useEffect(() => {
+    if (!auth.user) {
+      setStats({ status: 'loading' });
+      return;
+    }
     void refreshStats();
-  }, [loadStations, refreshStats]);
+  }, [auth.user, refreshStats]);
 
   const stationList = stations.status === 'ready' ? stations.data : [];
 
@@ -114,16 +131,40 @@ export function App() {
         setCaptionsOpen(false);
         setStatsOpen(false);
         setFavoritesOpen(false);
+        setFriendsOpen(false);
+        auth.closeModal();
+        setAccountMenuOpen(false);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [radio]);
+  }, [auth, radio]);
+
+  const requireAccount = useCallback(
+    (then: () => void) => {
+      if (!auth.user) {
+        auth.openModal({ nudge: ACCOUNT_NUDGE, tab: 'signup' });
+        return;
+      }
+      then();
+    },
+    [auth],
+  );
 
   const openStats = useCallback(() => {
-    setStatsOpen(true);
-    void refreshStats();
-  }, [refreshStats]);
+    requireAccount(() => {
+      setStatsOpen(true);
+      void refreshStats();
+    });
+  }, [refreshStats, requireAccount]);
+
+  const openFavorites = useCallback(() => {
+    requireAccount(() => setFavoritesOpen(true));
+  }, [requireAccount]);
+
+  const openFriends = useCallback(() => {
+    requireAccount(() => setFriendsOpen(true));
+  }, [requireAccount]);
 
   const targetLanguage = health?.targetLanguage ?? 'spanish';
   const booting = stations.status === 'loading' || !globeReady;
@@ -136,6 +177,7 @@ export function App() {
         playing={radio.station}
         deadStations={radio.deadStations}
         favoriteIds={favorites.ids}
+        friendsListening={friendsListening}
         onSelect={tune}
         onReady={() => setGlobeReady(true)}
       />
@@ -168,7 +210,10 @@ export function App() {
           <button type="button" className="button glass" onClick={openStats}>
             <span aria-hidden="true">◷</span> Progress
           </button>
-          <button type="button" className="button glass" onClick={() => setFavoritesOpen(true)}>
+          <button type="button" className="button glass" onClick={openFriends}>
+            <span aria-hidden="true">✧</span> Friends
+          </button>
+          <button type="button" className="button glass" onClick={openFavorites}>
             <span aria-hidden="true">♥</span> Favorites
             {favorites.favorites.length > 0 && (
               <span className="button__badge" aria-hidden="true">
@@ -176,6 +221,39 @@ export function App() {
               </span>
             )}
           </button>
+          {auth.user ? (
+            <div className="account">
+              <button
+                type="button"
+                className="button glass account__toggle"
+                aria-expanded={accountMenuOpen}
+                aria-haspopup="menu"
+                onClick={() => setAccountMenuOpen((open) => !open)}
+              >
+                {auth.user.username}
+              </button>
+              {accountMenuOpen && (
+                <div className="account__menu glass" role="menu">
+                  <p className="account__display">{auth.user.displayName}</p>
+                  <button
+                    type="button"
+                    className="account__signout"
+                    role="menuitem"
+                    onClick={() => {
+                      setAccountMenuOpen(false);
+                      void auth.signOut();
+                    }}
+                  >
+                    Sign out
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <button type="button" className="button glass" onClick={() => auth.openModal()}>
+              Sign in
+            </button>
+          )}
         </div>
       </header>
 
@@ -285,6 +363,20 @@ export function App() {
             setFavoritesOpen(false);
           }}
           onRemove={(stationId) => void favorites.remove(stationId)}
+        />
+      )}
+
+      {friendsOpen && auth.user && (
+        <FriendsPanel me={auth.user} onClose={() => setFriendsOpen(false)} />
+      )}
+
+      {auth.modalOpen && (
+        <AuthModal
+          defaultTab={auth.defaultTab}
+          nudge={auth.nudge}
+          onClose={auth.closeModal}
+          onLogin={auth.signIn}
+          onSignup={auth.signUp}
         />
       )}
 

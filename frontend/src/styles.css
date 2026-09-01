@@ -200,7 +200,21 @@ code {
 
 .hud__actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 10px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* ------------------------------------------------------------- buttons -- */
@@ -1924,6 +1938,302 @@ code {
   color: #ff9aac;
   border-color: rgba(255, 128, 149, 0.35);
   background: rgba(255, 128, 149, 0.12);
+}
+
+/* ---------------------------------------------------------------- auth -- */
+
+.modal--auth {
+  z-index: 12;
+}
+
+.modal__panel--narrow {
+  width: min(420px, 100%);
+}
+
+.modal__panel--friends {
+  width: min(640px, 100%);
+}
+
+.auth {
+  display: grid;
+  gap: 14px;
+  padding: 18px 24px 24px;
+}
+
+.auth__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.auth__tab {
+  font: inherit;
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--ink-muted);
+  border-radius: 999px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.auth__tab--active {
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.auth__nudge {
+  font-size: 13px;
+  color: var(--ink-secondary);
+  background: var(--accent-dim);
+  border: 1px solid rgba(84, 230, 195, 0.28);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.auth__error {
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.field em {
+  font-style: normal;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-muted);
+  opacity: 0.75;
+}
+
+.field input {
+  font: inherit;
+  font-size: 14.5px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.field input:focus {
+  outline: none;
+  border-color: rgba(84, 230, 195, 0.5);
+  box-shadow: 0 0 0 3px rgba(84, 230, 195, 0.12);
+}
+
+.field--row {
+  flex: 1;
+  min-width: 0;
+}
+
+.account {
+  position: relative;
+}
+
+.account__toggle {
+  font-variant-numeric: tabular-nums;
+}
+
+.account__menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 180px;
+  padding: 10px 8px;
+  display: grid;
+  gap: 6px;
+  z-index: 4;
+}
+
+.account__display {
+  font-size: 12.5px;
+  color: var(--ink-secondary);
+  padding: 4px 10px 6px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.account__signout {
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.account__signout:hover {
+  background: rgba(255, 128, 149, 0.12);
+  color: var(--danger);
+}
+
+/* -------------------------------------------------------------- friends -- */
+
+.friends__add {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 16px 24px 8px;
+}
+
+.friends__follow-error {
+  padding: 0 24px 4px;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.friends {
+  list-style: none;
+  margin: 0;
+  padding: 8px 16px 20px;
+  overflow-y: auto;
+  display: grid;
+  gap: 8px;
+}
+
+.friends__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--hairline);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.friends__row--live {
+  border-color: rgba(255, 207, 106, 0.35);
+  background: rgba(255, 207, 106, 0.06);
+}
+
+.friends__identity {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 4px;
+}
+
+.friends__name {
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.friends__you {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid rgba(84, 230, 195, 0.35);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+.friends__username {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-muted);
+}
+
+.friends__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--ink-secondary);
+}
+
+.friends__listening {
+  font-size: 12.5px;
+  color: #ffcf6a;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.friends__unfollow {
+  font: inherit;
+  font-size: 12px;
+  flex: none;
+  align-self: center;
+  opacity: 0.4;
+  border: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--ink-muted);
+  border-radius: 999px;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: opacity 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.friends__row:hover .friends__unfollow,
+.friends__unfollow:focus-visible {
+  opacity: 1;
+}
+
+.friends__unfollow:hover {
+  color: var(--danger);
+  border-color: rgba(255, 128, 149, 0.35);
+}
+
+/* ---------------------------------------------------------- friend pins -- */
+
+.friend-pin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  transform: translate(-50%, -110%);
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.friend-pin__ring {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffcf6a;
+  border: 2px solid #fff6d8;
+  box-shadow:
+    0 0 0 2px rgba(255, 207, 106, 0.55),
+    0 0 18px rgba(255, 207, 106, 0.75);
+}
+
+.friend-pin__label {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(12, 18, 32, 0.88);
+  border: 1px solid rgba(255, 207, 106, 0.45);
+  color: #ffcf6a;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
 }
 
 /* ------------------------------------------------------------ spinners -- */

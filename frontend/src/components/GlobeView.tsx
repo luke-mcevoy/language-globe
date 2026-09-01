@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Globe, { type GlobeMethods } from 'react-globe.gl';
 import * as THREE from 'three';
 import { flagEmoji, localTimeAt } from '../lib/format';
-import type { Station } from '../types';
+import type { FriendListening, Station } from '../types';
 
 const TEXTURES = {
   day: 'https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg',
@@ -27,6 +27,8 @@ interface GlobeViewProps {
   deadStations: ReadonlySet<string>;
   /** Station ids the user has favorited. Rendered gold + slightly larger. */
   favoriteIds: ReadonlySet<string>;
+  /** Followed users who are live — gold-ringed pins with a username label. */
+  friendsListening?: FriendListening[];
   onSelect: (station: Station) => void;
   /** Set once the textures are decoded, so the app can fade the loader out. */
   onReady?: () => void;
@@ -56,16 +58,28 @@ function useElementSize(): [React.RefObject<HTMLDivElement | null>, Size] {
   return [ref, size];
 }
 
+interface FriendPin {
+  stationId: string;
+  lat: number;
+  lon: number;
+  usernames: string[];
+}
+
 export function GlobeView({
   stations,
   selected,
   playing,
   deadStations,
   favoriteIds,
+  friendsListening = [],
   onSelect,
   onReady,
 }: GlobeViewProps) {
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+  const stationsRef = useRef(stations);
+  stationsRef.current = stations;
   const [containerRef, size] = useElementSize();
   const [material, setMaterial] = useState<THREE.MeshBasicMaterial | null>(null);
   const [hovered, setHovered] = useState<Station | null>(null);
@@ -101,23 +115,59 @@ export function GlobeView({
     };
   }, [onReady]);
 
-  // Idle auto-rotation, paused while a station is selected.
+  const friendStationIds = useMemo(
+    () => new Set(friendsListening.map((friend) => friend.stationId)),
+    [friendsListening],
+  );
+
+  const friendPins = useMemo(() => {
+    const grouped = new Map<string, FriendPin>();
+    for (const friend of friendsListening) {
+      const existing = grouped.get(friend.stationId);
+      if (existing) {
+        existing.usernames.push(friend.username);
+      } else {
+        grouped.set(friend.stationId, {
+          stationId: friend.stationId,
+          lat: friend.lat,
+          lon: friend.lon,
+          usernames: [friend.username],
+        });
+      }
+    }
+    return [...grouped.values()];
+  }, [friendsListening]);
+
+  // Idle auto-rotation, paused while a station is selected or a friend pin is up.
   useEffect(() => {
     const controls = globeRef.current?.controls();
     if (!controls) return;
-    controls.autoRotate = selected === null;
+    controls.autoRotate = selected === null && friendPins.length === 0;
     controls.autoRotateSpeed = 0.22;
     controls.enableDamping = true;
     controls.dampingFactor = 0.12;
     controls.minDistance = 140;
     controls.maxDistance = 620;
-  }, [selected, material]);
+  }, [friendPins.length, selected, material]);
 
   // Fly the camera to the selection.
   useEffect(() => {
     if (!selected) return;
     globeRef.current?.pointOfView({ lat: selected.lat, lng: selected.lon, altitude: 1.35 }, 1400);
   }, [selected]);
+
+  // If the globe is idle, glance at a friend who just started listening so
+  // their gold pin is on-camera instead of hidden on the far side.
+  const glance = friendPins[0];
+  const glanceKey = glance ? `${glance.stationId}:${glance.lat}:${glance.lon}` : '';
+  const glanceRef = useRef(glance);
+  glanceRef.current = glance;
+
+  useEffect(() => {
+    const target = glanceRef.current;
+    if (selected || playing || !target) return;
+    globeRef.current?.pointOfView({ lat: target.lat, lng: target.lon, altitude: 1.45 }, 1400);
+  }, [glanceKey, playing, selected]);
 
   const maxClicks = useMemo(
     () => stations.reduce((max, station) => Math.max(max, station.clickcount), 1),
@@ -130,11 +180,11 @@ export function GlobeView({
       const popularity = Math.log1p(station.clickcount) / Math.log1p(maxClicks);
       const base = 0.16 + popularity * 0.34;
       const scaled = station.id === playing?.id ? base * 1.6 : base;
-      // Favorited pins get a small extra bump so they still stand out even
-      // when the station is rarely clicked (i.e. would otherwise be tiny).
-      return favoriteIds.has(station.id) ? scaled * 1.25 : scaled;
+      // Favorited / friend-listening pins get a small extra bump so they still
+      // stand out even when the station is rarely clicked.
+      return favoriteIds.has(station.id) || friendStationIds.has(station.id) ? scaled * 1.25 : scaled;
     },
-    [favoriteIds, maxClicks, playing],
+    [favoriteIds, friendStationIds, maxClicks, playing],
   );
 
   const pointColor = useCallback(
@@ -142,12 +192,11 @@ export function GlobeView({
       const station = object as Station;
       if (deadStations.has(station.id)) return DEAD_COLOR;
       if (station.id === playing?.id) return '#ffffff';
-      // Favorites override the kind color: they are the user's collection, so
-      // they should read as "yours" first, "talk/music" second.
-      if (favoriteIds.has(station.id)) return FAVORITE_COLOR;
+      // Favorites and live friend stations share the gold pin pathway.
+      if (favoriteIds.has(station.id) || friendStationIds.has(station.id)) return FAVORITE_COLOR;
       return KIND_COLORS[station.kind];
     },
-    [deadStations, favoriteIds, playing],
+    [deadStations, favoriteIds, friendStationIds, playing],
   );
 
   const pointAltitude = useCallback(
@@ -176,7 +225,7 @@ export function GlobeView({
     `;
   }, []);
 
-  /** One ring for the station that is playing; a fainter one for the selection. */
+  /** Playing / selection rings, plus a gold pulse at each friend station. */
   const rings = useMemo(() => {
     const data: { lat: number; lng: number; color: string; period: number; maxRadius: number }[] = [];
     if (playing) {
@@ -185,8 +234,32 @@ export function GlobeView({
     if (selected && selected.id !== playing?.id) {
       data.push({ lat: selected.lat, lng: selected.lon, color: '#8d7dff', period: 2600, maxRadius: 2.6 });
     }
+    for (const pin of friendPins) {
+      if (pin.stationId === playing?.id || pin.stationId === selected?.id) continue;
+      data.push({ lat: pin.lat, lng: pin.lon, color: FAVORITE_COLOR, period: 1800, maxRadius: 3.4 });
+    }
     return data;
-  }, [playing, selected]);
+  }, [friendPins, playing, selected]);
+
+  const friendHtmlElement = useCallback((object: object) => {
+    const pin = object as FriendPin;
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'friend-pin';
+    el.dataset.testid = 'friend-pin';
+    el.dataset.username = pin.usernames.join(',');
+    el.setAttribute('aria-label', `Tune to ${pin.usernames.join(', ')}'s station`);
+    el.innerHTML = `
+      <span class="friend-pin__ring" aria-hidden="true"></span>
+      <span class="friend-pin__label">${pin.usernames.map(escapeHtml).join(', ')}</span>
+    `;
+    el.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const station = stationsRef.current.find((candidate) => candidate.id === pin.stationId);
+      if (station) onSelectRef.current(station);
+    });
+    return el;
+  }, []);
 
   return (
     <div className={`globe-view${hovered ? ' globe-view--hovering' : ''}`} ref={containerRef}>
@@ -222,6 +295,12 @@ export function GlobeView({
           ringMaxRadius={(object: object) => (object as { maxRadius: number }).maxRadius}
           ringPropagationSpeed={2}
           ringRepeatPeriod={(object: object) => (object as { period: number }).period}
+          htmlElementsData={friendPins}
+          htmlLat={(object: object) => (object as FriendPin).lat}
+          htmlLng={(object: object) => (object as FriendPin).lon}
+          htmlAltitude={0.018}
+          htmlElement={friendHtmlElement}
+          htmlTransitionDuration={0}
           animateIn={false}
         />
       )}

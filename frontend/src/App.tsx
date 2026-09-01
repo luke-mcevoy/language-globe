@@ -234,6 +234,15 @@ export function App() {
         friendsListening={friendsListening}
         onSelect={tune}
         onReady={() => setGlobeReady(true)}
+        onContextLost={() => {
+          // A lost WebGL context leaves the globe permanently black (three.js
+          // cannot rebuild in place), so reload once to recover. The timestamp
+          // guard prevents a reload loop if the GPU is genuinely broken.
+          const last = Number(sessionStorage.getItem('lg-gl-reload') ?? 0);
+          if (Date.now() - last < 30000) return;
+          sessionStorage.setItem('lg-gl-reload', String(Date.now()));
+          window.location.reload();
+        }}
       />
 
       <header className="hud hud--top">

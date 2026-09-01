@@ -32,6 +32,13 @@ interface GlobeViewProps {
   onSelect: (station: Station) => void;
   /** Set once the textures are decoded, so the app can fade the loader out. */
   onReady?: () => void;
+  /**
+   * Fired when the browser kills the WebGL context (GPU process restart,
+   * update-pending Chrome, mobile tab eviction). The parent should remount
+   * this component with a fresh key — otherwise the globe stays black until
+   * the user reloads the page.
+   */
+  onContextLost?: () => void;
 }
 
 interface Size {
@@ -74,6 +81,7 @@ export function GlobeView({
   friendsListening = [],
   onSelect,
   onReady,
+  onContextLost,
 }: GlobeViewProps) {
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const onSelectRef = useRef(onSelect);
@@ -83,6 +91,21 @@ export function GlobeView({
   const [containerRef, size] = useElementSize();
   const [material, setMaterial] = useState<THREE.MeshBasicMaterial | null>(null);
   const [hovered, setHovered] = useState<Station | null>(null);
+  const onContextLostRef = useRef(onContextLost);
+  onContextLostRef.current = onContextLost;
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const canvas = container.querySelector('canvas');
+    if (!canvas) return;
+    const handleLost = (event: Event) => {
+      event.preventDefault();
+      onContextLostRef.current?.();
+    };
+    canvas.addEventListener('webglcontextlost', handleLost);
+    return () => canvas.removeEventListener('webglcontextlost', handleLost);
+  }, [containerRef, material, size.width]);
 
   // Always-daylight globe: an unlit material with the day texture, so no part
   // of the Earth is ever in shadow regardless of the real time of day.

@@ -2,11 +2,13 @@
 
 **Spin a 3D Earth, tune into live radio anywhere in the world, and learn a language from what's actually on the air right now.**
 
-Live streams get synced karaoke captions with word-by-word highlighting, any word you don't know is one click away from a translation, and a comprehension quiz is generated from the last minute of whatever you were listening to. Sign in to save vocab, favorites, quiz history, and to follow friends. Pick a language from the header (Spanish, Italian, French, and more); the server default is Spanish.
+Pick Spanish, Italian, French, or a dozen others. Live streams get synced karaoke captions with word-by-word highlighting, any word you don't know is one click away from a translation, and a comprehension quiz is generated from the last minute of whatever you were listening to. Sign in to save vocab, favorites, quiz history, and to follow friends.
 
 New visitors get a six-step welcome tour (replay it anytime with **?** in the header).
 
-![Live karaoke captions following a merengue station in Ecuador](docs/media/demo-karaoke.gif)
+![Live karaoke captions on Cadena SER in Spain](docs/media/demo-karaoke.gif)
+
+![The globe with a language picker — Spanish radio, 1,459 stations](docs/media/globe.png)
 
 ## What it does
 
@@ -16,13 +18,17 @@ Every pin is a real radio station streaming right now, colored by content type. 
 
 The legend in the corner is a filter: click **talk / news**, **music**, or **unlabelled** to solo that kind; click more to add them; **show all** clears it. **Surprise me** respects the filter.
 
-The language menu next to **Surprise me** reloads the globe for that language and tells captions, quizzes, and word lookup which language you are learning. Your choice is remembered in this browser.
+### Pick the language you want to learn
+
+The menu next to **Surprise me** reloads the globe for that language and tells captions, quizzes, and word lookup which language you are learning. Your choice is remembered in this browser.
+
+![Italian selected: the globe shows 161 Italian stations clustered over Europe](docs/media/italian.png)
 
 ### Synced karaoke captions
 
 Press **CC** and the app buffers the stream for a few seconds so it can transcribe *ahead* of what you hear. Captions appear as cinematic subtitles over the globe — words light up one-by-one exactly as they're spoken. Timing comes from whisper.cpp's DTW-aligned token timestamps, not interpolation. Music passages collapse to a ♪ marker.
 
-![Word-level karaoke highlighting on a live stream](docs/media/karaoke.png)
+![Word-level karaoke highlighting on Cadena SER — Radio Zamora](docs/media/karaoke.png)
 
 ### Click a word you don't know
 
@@ -45,6 +51,12 @@ Create a username on this server (no email). Signed-in you get:
 - **Friends** — follow people, see who's listening live as gold pins, compete on the leaderboard
 
 ![Progress panel with stats, passport, and the vocab list](docs/media/progress.png)
+
+### Welcome tour
+
+The first visit walks through the globe, captions, word lookup, quizzes, progress, and friends. Hit **?** anytime to replay it.
+
+![Welcome tour introducing Language Globe](docs/media/tour.png)
 
 ## Local models only
 
